@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:planova/main_wrapper.dart';
 import 'package:planova/utils/app_colors.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'signup_page.dart';
@@ -86,7 +87,7 @@ class _LoginPageState extends State<LoginPage> {
   void _navigateToDashboard() {
     Navigator.pushAndRemoveUntil(
       context,
-      MaterialPageRoute(builder: (context) => const HomePage()),
+      MaterialPageRoute(builder: (context) => const MainWrapper()), // ✅ Entering through the nav bar
           (route) => false,
     );
   }
