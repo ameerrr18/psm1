@@ -10,7 +10,6 @@ class SignupPage extends StatefulWidget {
 }
 
 class _SignupPageState extends State<SignupPage> {
-  // Controllers
   final TextEditingController _usernameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
@@ -26,6 +25,28 @@ class _SignupPageState extends State<SignupPage> {
     _passwordController.dispose();
     _confirmPasswordController.dispose();
     super.dispose();
+  }
+
+  // --- Logic to Generate Sequential ID ---
+  Future<String> _generateCustomId() async {
+    final counterRef = FirebaseFirestore.instance.collection('metadata').doc('user_counter');
+
+    return await FirebaseFirestore.instance.runTransaction((transaction) async {
+      DocumentSnapshot snapshot = await transaction.get(counterRef);
+
+      if (!snapshot.exists) {
+        // Fallback if document doesn't exist
+        transaction.set(counterRef, {'current_count': 1});
+        return "UID_0001";
+      }
+
+      int newCount = (snapshot.get('current_count') as int) + 1;
+      transaction.update(counterRef, {'current_count': newCount});
+
+      // Formats the number to be 4 digits (e.g., 1 -> 0001)
+      String formattedNumber = newCount.toString().padLeft(4, '0');
+      return "UID_$formattedNumber";
+    });
   }
 
   Future<void> _handleSignup() async {
@@ -47,15 +68,19 @@ class _SignupPageState extends State<SignupPage> {
     setState(() => _isLoading = true);
 
     try {
+      // 1. Create Auth User
       UserCredential userCredential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
         email: email,
         password: password,
       );
 
-      String uid = userCredential.user!.uid;
+      // 2. Generate the Sequential Custom ID
+      String customId = await _generateCustomId();
 
-      await FirebaseFirestore.instance.collection('users').doc(uid).set({
-        'uid': uid,
+      // 3. Store in Firestore using the customId as the Document Name
+      await FirebaseFirestore.instance.collection('users').doc(customId).set({
+        'uid': userCredential.user!.uid, // Still keep the Firebase Auth UID for reference
+        'custom_id': customId,           // This is your UID_0001
         'username': username,
         'email': email,
         'createdAt': FieldValue.serverTimestamp(),
@@ -64,13 +89,13 @@ class _SignupPageState extends State<SignupPage> {
       await userCredential.user?.updateDisplayName(username);
 
       if (mounted) {
-        _showSnackBar("Account created successfully!");
+        _showSnackBar("Account created: $customId");
         Navigator.pop(context);
       }
     } on FirebaseAuthException catch (e) {
       _showSnackBar(e.message ?? "Authentication failed");
     } catch (e) {
-      _showSnackBar("An unexpected error occurred.");
+      _showSnackBar("Error: ${e.toString()}");
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -78,7 +103,11 @@ class _SignupPageState extends State<SignupPage> {
 
   void _showSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
+      SnackBar(
+        content: Text(message),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
     );
   }
 
@@ -92,15 +121,14 @@ class _SignupPageState extends State<SignupPage> {
       onTap: () => FocusScope.of(context).unfocus(),
       child: Scaffold(
         backgroundColor: primaryNavy,
-        resizeToAvoidBottomInset: false, // Handle inset manually for better control
+        resizeToAvoidBottomInset: false,
         body: Stack(
           children: [
             _buildBackgroundDecoration(),
             SafeArea(
               child: CustomScrollView(
-                physics: const ClampingScrollPhysics(), // Prevents white gaps on Vivo
+                physics: const ClampingScrollPhysics(),
                 slivers: [
-                  // --- Header Section ---
                   SliverToBoxAdapter(
                     child: Column(
                       children: [
@@ -117,17 +145,14 @@ class _SignupPageState extends State<SignupPage> {
                       ],
                     ),
                   ),
-
-                  // --- White Card Section (Stretches to fill Poco X3 screen) ---
                   SliverFillRemaining(
-                    hasScrollBody: false, // Ensures the card stretches
+                    hasScrollBody: false,
                     child: Container(
                       width: double.infinity,
                       padding: EdgeInsets.only(
                         left: 30,
                         right: 30,
                         top: 40,
-                        // Pushes button above keyboard on both devices
                         bottom: isKeyboardOpen ? keyboardHeight + 30 : 40,
                       ),
                       decoration: const BoxDecoration(
@@ -149,7 +174,6 @@ class _SignupPageState extends State<SignupPage> {
                           const SizedBox(height: 8),
                           _buildLoginRedirect(),
                           const SizedBox(height: 30),
-
                           _buildTextField(
                             controller: _usernameController,
                             icon: Icons.person_outline,
@@ -179,14 +203,10 @@ class _SignupPageState extends State<SignupPage> {
                             obscure: _obscurePassword,
                             onToggle: () => setState(() => _obscurePassword = !_obscurePassword),
                           ),
-
                           const SizedBox(height: 30),
-
                           _isLoading
                               ? const CircularProgressIndicator(color: primaryNavy)
                               : _buildActionButton("Sign up", primaryNavy, _handleSignup),
-
-                          // Invisible spacer to force the card to stay filled on big screens
                           const Spacer(),
                         ],
                       ),
@@ -201,8 +221,7 @@ class _SignupPageState extends State<SignupPage> {
     );
   }
 
-  // --- UI Helpers ---
-
+  // --- UI Helpers remain the same ---
   Widget _buildBackgroundDecoration() {
     return Positioned(
       top: -30, right: -20,
