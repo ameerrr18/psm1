@@ -4,7 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:planova/utils/app_colors.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'signup_page.dart';
-import '../home_page/dashboard_page.dart';
+import '../home_page/home_page.dart';
 import 'forgot_password_page.dart';
 
 class LoginPage extends StatefulWidget {
@@ -86,7 +86,7 @@ class _LoginPageState extends State<LoginPage> {
   void _navigateToDashboard() {
     Navigator.pushAndRemoveUntil(
       context,
-      MaterialPageRoute(builder: (context) => const DashboardPage()),
+      MaterialPageRoute(builder: (context) => const HomePage()),
           (route) => false,
     );
   }

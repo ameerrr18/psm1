@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:planova/main_wrapper.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 // Ensure these paths match your project structure exactly
 import 'login_page/splash_screen.dart';
-import 'home_page/dashboard_page.dart';
+import 'home_page/home_page.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -23,7 +24,7 @@ void main() async {
 
   if (rememberMe && user != null) {
     // If they checked "Remember Me" and are logged in, go straight to Dashboard
-    initialScreen = const DashboardPage();
+    initialScreen = const MainWrapper();
   } else {
     // Otherwise, show the Splash Screen (or Login)
     initialScreen = const SplashScreen();
