@@ -1,19 +1,17 @@
 import 'package:flutter/material.dart';
-import 'home_page/home_page.dart'; // Ensure path is correct
+import '../task_page/task_page.dart';
+import 'home_page/home_page.dart';
 import 'widgets/bottom_nav.dart';
 
-// Dummy Hub Page
-class HubPage extends StatelessWidget {
-  const HubPage({super.key});
-  @override
-  Widget build(BuildContext context) => const Scaffold(body: Center(child: Text("Hub / More Page")));
-}
-
-// Dummy Profile Page
 class ProfilePage extends StatelessWidget {
   const ProfilePage({super.key});
+
   @override
-  Widget build(BuildContext context) => const Scaffold(body: Center(child: Text("Profile Page")));
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      body: Center(child: Text("Profile Page")),
+    );
+  }
 }
 
 class MainWrapper extends StatefulWidget {
@@ -25,38 +23,49 @@ class MainWrapper extends StatefulWidget {
 
 class _MainWrapperState extends State<MainWrapper> {
   int _selectedIndex = 0;
+  final List<int> _history = [0];
 
-  // List of pages to display
   final List<Widget> _pages = [
     const HomePage(),
-    const HubPage(),
+    const TaskPage(),
     const ProfilePage(),
   ];
 
+  void _onItemTapped(int index) {
+    if (_selectedIndex == index) return;
+
+    setState(() {
+      _selectedIndex = index;
+
+      _history.remove(index);
+      _history.add(index);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      // Use IndexedStack to keep scroll positions alive when switching tabs
-      body: Stack(
-        children: [
-          IndexedStack(
-            index: _selectedIndex,
-            children: _pages,
-          ),
+    return PopScope(
+      canPop: _history.length <= 1,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
 
-          // Persistent Floating Nav Bar
-          Align(
-            alignment: Alignment.bottomCenter,
-            child: CustomBottomNav(
-              currentIndex: _selectedIndex,
-              onTap: (index) {
-                setState(() {
-                  _selectedIndex = index;
-                });
-              },
-            ),
-          ),
-        ],
+        if (_history.length > 1) {
+          setState(() {
+            _history.removeLast();
+            _selectedIndex = _history.last;
+          });
+        }
+      },
+      child: Scaffold(
+        extendBody: true,
+        body: IndexedStack(
+          index: _selectedIndex,
+          children: _pages,
+        ),
+        bottomNavigationBar: CustomBottomNav(
+          currentIndex: _selectedIndex,
+          onTap: _onItemTapped,
+        ),
       ),
     );
   }

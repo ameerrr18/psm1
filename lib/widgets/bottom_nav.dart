@@ -14,8 +14,9 @@ class CustomBottomNav extends StatefulWidget {
   State<CustomBottomNav> createState() => _CustomBottomNavState();
 }
 
-class _CustomBottomNavState extends State<CustomBottomNav> {
-  bool isHubOpen = false; // Tracks if the "cloud" menu is visible
+class _CustomBottomNavState extends State<CustomBottomNav>
+    with SingleTickerProviderStateMixin {
+  bool isHubOpen = false;
   final Color primaryNavy = const Color(0xFF1A4789);
 
   void toggleHub() {
@@ -24,85 +25,118 @@ class _CustomBottomNavState extends State<CustomBottomNav> {
     });
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      alignment: Alignment.bottomCenter,
-      clipBehavior: Clip.none,
-      children: [
-        // --- 1. The Cloud Menu Overlay ---
-        if (isHubOpen) _buildHubCloud(),
+  void _openPage(int index) {
+    setState(() {
+      isHubOpen = false;
+    });
 
-        // --- 2. The Main Bottom Nav Bar ---
-        Container(
-          height: 85,
-          margin: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(40),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.1),
-                blurRadius: 30,
-                offset: const Offset(0, 10),
-              )
-            ],
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _navItem(Icons.grid_view_rounded, "HOME", 0),
-              _buildCenterHubButton(),
-              _navItem(Icons.person_outline, "PROFILE", 2),
-            ],
-          ),
-        ),
-      ],
-    );
+    widget.onTap(index);
   }
 
-  // The "Cloud" that pops up with 3 options
-  Widget _buildHubCloud() {
-    return Positioned(
-      bottom: 110, // Sits above the nav bar
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
-        width: MediaQuery.of(context).size.width * 0.85,
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.95),
-          borderRadius: BorderRadius.circular(35),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.1),
-              blurRadius: 20,
-              offset: const Offset(0, -5),
-            )
-          ],
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: [
-            _hubOption(Icons.check_circle_outline, "MY TASKS", () {
-              toggleHub();
-              // Add navigation to Task Page here
-            }),
-            _hubOption(Icons.group_outlined, "TEAM", () {
-              toggleHub();
-              // Add navigation to Team Page here
-            }),
-            _hubOption(Icons.description_outlined, "LIBRARY", () {
-              toggleHub();
-              // Add navigation to Library Page here
-            }),
-          ],
-        ),
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 150,
+      child: Stack(
+        alignment: Alignment.bottomCenter,
+        clipBehavior: Clip.none,
+        children: [
+
+          /// TAP BLOCKER (prevents nav bar from stealing taps)
+          if (isHubOpen)
+            Positioned.fill(
+              child: GestureDetector(
+                onTap: toggleHub,
+                child: Container(color: Colors.transparent),
+              ),
+            ),
+
+          /// HUB CLOUD MENU
+          AnimatedPositioned(
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeOut,
+            bottom: isHubOpen ? 115 : 90,
+            child: AnimatedOpacity(
+              duration: const Duration(milliseconds: 200),
+              opacity: isHubOpen ? 1 : 0,
+              child: IgnorePointer(
+                ignoring: !isHubOpen,
+                child: _buildHubCloud(),
+              ),
+            ),
+          ),
+
+          /// MAIN NAV BAR
+          Container(
+            height: 85,
+            margin: const EdgeInsets.only(left: 20, right: 20, bottom: 20),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(40),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 30,
+                  offset: const Offset(0, 10),
+                )
+              ],
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _navItem(Icons.grid_view_rounded, "HOME", 0),
+                _buildCenterHubButton(),
+                _navItem(Icons.person_outline, "PROFILE", 2),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _hubOption(IconData icon, String label, VoidCallback action) {
+  Widget _buildHubCloud() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+      width: MediaQuery.of(context).size.width * 0.85,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(35),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 20,
+            offset: const Offset(0, -5),
+          )
+        ],
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: [
+
+          /// MY TASK
+          _hubOption(Icons.check_circle_outline, "MY TASKS", () {
+            _openPage(1);
+          }),
+
+          /// TEAM
+          _hubOption(Icons.group_outlined, "TEAM", () {
+            toggleHub();
+          }),
+
+          /// LIBRARY
+          _hubOption(Icons.description_outlined, "LIBRARY", () {
+            toggleHub();
+          }),
+        ],
+      ),
+    );
+  }
+
+  Widget _hubOption(IconData icon, String label, VoidCallback onTap) {
     return GestureDetector(
-      onTap: action,
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -130,12 +164,12 @@ class _CustomBottomNavState extends State<CustomBottomNav> {
 
   Widget _buildCenterHubButton() {
     return GestureDetector(
-      onTap: toggleHub, // Toggle the cloud instead of direct navigation
+      onTap: toggleHub,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Transform.translate(
-            offset: const Offset(0, -20),
+            offset: const Offset(0, -25),
             child: Container(
               padding: const EdgeInsets.all(15),
               decoration: BoxDecoration(
@@ -151,16 +185,23 @@ class _CustomBottomNavState extends State<CustomBottomNav> {
               ),
               child: AnimatedRotation(
                 duration: const Duration(milliseconds: 200),
-                turns: isHubOpen ? 0.125 : 0, // Tilts the icon slightly when open
-                child: const Icon(Icons.grid_on_rounded, color: Colors.white, size: 30),
+                turns: isHubOpen ? 0.125 : 0,
+                child: const Icon(
+                  Icons.grid_on_rounded,
+                  color: Colors.white,
+                  size: 30,
+                ),
               ),
             ),
           ),
-          const Text("HUB",
-              style: TextStyle(
-                  color: Colors.grey,
-                  fontSize: 10,
-                  fontWeight: FontWeight.bold)),
+          const Text(
+            "HUB",
+            style: TextStyle(
+              color: Colors.grey,
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
         ],
       ),
     );
@@ -168,16 +209,24 @@ class _CustomBottomNavState extends State<CustomBottomNav> {
 
   Widget _navItem(IconData icon, String label, int index) {
     bool isSelected = widget.currentIndex == index;
+
     return GestureDetector(
       onTap: () {
-        if (isHubOpen) setState(() => isHubOpen = false);
+        if (isHubOpen) {
+          setState(() {
+            isHubOpen = false;
+          });
+        }
+
         widget.onTap(index);
       },
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon,
-              color: isSelected ? primaryNavy : Colors.grey.withOpacity(0.5)),
+          Icon(
+            icon,
+            color: isSelected ? primaryNavy : Colors.grey.withOpacity(0.5),
+          ),
           const SizedBox(height: 4),
           Text(
             label,
