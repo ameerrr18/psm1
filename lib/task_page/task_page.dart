@@ -16,30 +16,6 @@ class _TaskPageState extends State<TaskPage> {
   String filterPriority = "All";
   String filterStatus = "All";
 
-  void _showDeleteDialog(BuildContext context, String taskId, String taskName) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text("Delete Task"),
-        content: Text("Are you sure you want to delete '$taskName'?"),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("Cancel", style: TextStyle(color: Colors.grey)),
-          ),
-          TextButton(
-            onPressed: () async {
-              await FirebaseFirestore.instance.collection('tasks').doc(taskId).delete();
-              if (mounted) Navigator.pop(context);
-            },
-            child: const Text("Delete", style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
-          ),
-        ],
-      ),
-    );
-  }
-
   void _confirmCompleteTask(Map<String, dynamic> task) {
     showDialog(
       context: context,
@@ -194,12 +170,8 @@ class _TaskPageState extends State<TaskPage> {
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
-        backgroundColor: Colors.transparent,
+        backgroundColor: Colors.white,
         elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Color(0xFF1A4789)),
-          onPressed: widget.onBack,
-        ),
         title: const Text("All Tasks",
             style: TextStyle(color: Color(0xFF1A4789), fontWeight: FontWeight.bold)),
         actions: [

@@ -2,17 +2,9 @@ import 'package:flutter/material.dart';
 import '../task_page/task_page.dart';
 import 'home_page/home_page.dart';
 import 'widgets/bottom_nav.dart';
-
-class ProfilePage extends StatelessWidget {
-  const ProfilePage({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return const Scaffold(
-      body: Center(child: Text("Profile Page")),
-    );
-  }
-}
+import 'profile_page/profile_page.dart';
+import 'team_page/team_page.dart';
+import 'library_page/library_page.dart';
 
 class MainWrapper extends StatefulWidget {
   const MainWrapper({super.key});
@@ -28,6 +20,8 @@ class _MainWrapperState extends State<MainWrapper> {
   final List<Widget> _pages = [
     const HomePage(),
     const TaskPage(),
+    const TeamPage(),
+    const LibraryPage(),
     const ProfilePage(),
   ];
 

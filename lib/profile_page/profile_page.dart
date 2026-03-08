@@ -1,0 +1,215 @@
+import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+
+class ProfilePage extends StatefulWidget {
+  const ProfilePage({super.key});
+
+  @override
+  State<ProfilePage> createState() => _ProfilePageState();
+}
+
+class _ProfilePageState extends State<ProfilePage> {
+  final Color primaryNavy = const Color(0xFF1A4789);
+  final Color lightBg = const Color(0xFFF8FAFC);
+  bool isDarkMode = false;
+
+  // Logout Logic: Signs out and clears navigation history
+  Future<void> _handleLogout() async {
+    try {
+      await FirebaseAuth.instance.signOut();
+      if (mounted) {
+        // This removes all screens and sends the user to the Login page
+        Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Error logging out: $e")),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final user = FirebaseAuth.instance.currentUser;
+
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        title: Text(
+          "Profile",
+          style: TextStyle(color: primaryNavy, fontSize: 24, fontWeight: FontWeight.bold),
+        ),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.edit_outlined, color: primaryNavy),
+            onPressed: () {},
+          ),
+          const SizedBox(width: 10),
+        ],
+      ),
+      body: SingleChildScrollView(
+        // Padding bottom ensures it doesn't get cut off by the custom bottom nav
+        padding: const EdgeInsets.only(bottom: 140),
+        child: Column(
+          children: [
+            _buildUserInfo(user?.displayName ?? "Alex Rivera", user?.email ?? "a.rivera@cs.university.edu"),
+
+            Container(
+              width: double.infinity,
+              decoration: BoxDecoration(
+                color: lightBg,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(35)),
+              ),
+              padding: const EdgeInsets.all(25),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _sectionLabel("APP APPEARANCE"),
+                  _buildDarkModeToggle(),
+
+                  const SizedBox(height: 30),
+                  _sectionLabel("SETTINGS & SECURITY"),
+                  _buildSettingTile(Icons.notifications_none_rounded, "Notifications", Colors.blue),
+                  _buildSettingTile(Icons.shield_outlined, "Security & Privacy", Colors.green),
+                  _buildSettingTile(Icons.history_rounded, "Library History", Colors.orange),
+                  _buildSettingTile(Icons.restore_rounded, "Task History", Colors.purple),
+
+                  const SizedBox(height: 40),
+                  _buildLogoutAction(),
+
+                  const SizedBox(height: 40),
+                  const Center(
+                    child: Text(
+                      "PLANOVA AI VERSION 1.0.0",
+                      style: TextStyle(color: Colors.grey, fontSize: 10, letterSpacing: 1.5),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildUserInfo(String name, String email) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 25, vertical: 20),
+      child: Row(
+        children: [
+          Stack(
+            children: [
+              CircleAvatar(
+                radius: 45,
+                backgroundColor: primaryNavy.withOpacity(0.1),
+                child: Icon(Icons.person, size: 40, color: primaryNavy),
+              ),
+              Positioned(
+                bottom: 0,
+                right: 0,
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: const BoxDecoration(color: Color(0xFF8DE1E1), shape: BoxShape.circle),
+                  child: Icon(Icons.psychology_outlined, size: 18, color: primaryNavy),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(width: 20),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(name, style: TextStyle(color: primaryNavy, fontSize: 20, fontWeight: FontWeight.bold)),
+                Text(email, style: const TextStyle(color: Colors.grey, fontSize: 13)),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(color: primaryNavy.withOpacity(0.1), borderRadius: BorderRadius.circular(20)),
+                  child: Text("PREMIUM SCHOLAR", style: TextStyle(color: primaryNavy, fontSize: 10, fontWeight: FontWeight.bold)),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sectionLabel(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 10, bottom: 15),
+      child: Text(text, style: const TextStyle(color: Colors.grey, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.1)),
+    );
+  }
+
+  Widget _buildDarkModeToggle() {
+    return Container(
+      padding: const EdgeInsets.all(15),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(25)),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(color: Colors.orange.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
+            child: const Icon(Icons.wb_sunny_outlined, color: Colors.orange),
+          ),
+          const SizedBox(width: 15),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text("Dark Mode", style: TextStyle(color: primaryNavy, fontWeight: FontWeight.bold)),
+                const Text("Adjust display settings", style: TextStyle(color: Colors.grey, fontSize: 12)),
+              ],
+            ),
+          ),
+          Switch(
+            value: isDarkMode,
+            onChanged: (val) => setState(() => isDarkMode = val),
+            activeColor: primaryNavy,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSettingTile(IconData icon, String title, Color color) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(15),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(25)),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
+            child: Icon(icon, color: color),
+          ),
+          const SizedBox(width: 15),
+          Expanded(child: Text(title, style: TextStyle(color: primaryNavy, fontWeight: FontWeight.bold))),
+          const Icon(Icons.chevron_right, color: Colors.grey, size: 20),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLogoutAction() {
+    return InkWell(
+      onTap: _handleLogout,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.logout_rounded, color: Colors.red, size: 20),
+          const SizedBox(width: 10),
+          const Text("Log Out", style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 16)),
+        ],
+      ),
+    );
+  }
+}

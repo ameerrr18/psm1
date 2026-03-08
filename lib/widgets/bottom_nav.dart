@@ -86,7 +86,7 @@ class _CustomBottomNavState extends State<CustomBottomNav>
               children: [
                 _navItem(Icons.grid_view_rounded, "HOME", 0),
                 _buildCenterHubButton(),
-                _navItem(Icons.person_outline, "PROFILE", 2),
+                _navItem(Icons.person_outline, "PROFILE", 4),
               ],
             ),
           ),
@@ -121,12 +121,12 @@ class _CustomBottomNavState extends State<CustomBottomNav>
 
           /// TEAM
           _hubOption(Icons.group_outlined, "TEAM", () {
-            toggleHub();
+            _openPage(2);
           }),
 
           /// LIBRARY
           _hubOption(Icons.description_outlined, "LIBRARY", () {
-            toggleHub();
+            _openPage(3);
           }),
         ],
       ),
@@ -134,22 +134,31 @@ class _CustomBottomNavState extends State<CustomBottomNav>
   }
 
   Widget _hubOption(IconData icon, String label, VoidCallback onTap) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: primaryNavy,
-              borderRadius: BorderRadius.circular(15),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Wrapping only the Icon part to ensure it captures the tap
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(15),
+            splashColor: Colors.white24,
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: primaryNavy,
+                borderRadius: BorderRadius.circular(15),
+              ),
+              child: Icon(icon, color: Colors.white, size: 24),
             ),
-            child: Icon(icon, color: Colors.white, size: 24),
           ),
-          const SizedBox(height: 8),
-          Text(
+        ),
+        const SizedBox(height: 8),
+        // Text remains visible but tapping the icon triggers the action
+        GestureDetector(
+          onTap: onTap, // Optional: keep text clickable too
+          child: Text(
             label,
             style: TextStyle(
               color: primaryNavy,
@@ -157,8 +166,8 @@ class _CustomBottomNavState extends State<CustomBottomNav>
               fontWeight: FontWeight.bold,
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
