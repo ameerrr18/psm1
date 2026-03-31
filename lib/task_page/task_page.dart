@@ -262,6 +262,8 @@ class _TaskPageState extends State<TaskPage> {
                   itemCount: docs.length,
                   itemBuilder: (context, index) {
                     final data = docs[index].data() as Map<String, dynamic>;
+                    // Ensure taskID is explicitly available from the document ID
+                    data['taskId'] = docs[index].id;
                     return _buildTaskCard(context, data);
                   },
                 );
@@ -280,10 +282,10 @@ class _TaskPageState extends State<TaskPage> {
     String formattedDate = DateFormat('MMM d').format(date).toUpperCase();
 
     return Dismissible(
-      key: Key(task['taskId']),
+      // FIX 1: Use ValueKey with the unique taskId to maintain tree consistency
+      key: ValueKey(task['taskId']),
       direction: DismissDirection.horizontal,
 
-      // Swipe RIGHT → mark done
       background: Container(
         margin: const EdgeInsets.only(bottom: 15),
         padding: const EdgeInsets.only(left: 20),
@@ -295,7 +297,6 @@ class _TaskPageState extends State<TaskPage> {
         child: const Icon(Icons.check, color: Colors.white),
       ),
 
-      // Swipe LEFT → delete
       secondaryBackground: Container(
         margin: const EdgeInsets.only(bottom: 15),
         padding: const EdgeInsets.only(right: 20),
@@ -308,93 +309,65 @@ class _TaskPageState extends State<TaskPage> {
       ),
 
       confirmDismiss: (direction) async {
-
         // RIGHT swipe → confirm mark done
         if (direction == DismissDirection.startToEnd) {
-          return await showDialog(
+          // If already done, don't allow swipe right
+          if (isDone) return false;
+
+          final bool? result = await showDialog<bool>(
             context: context,
             builder: (context) => AlertDialog(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
-              ),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
               title: const Text("Complete Task"),
               content: Text("Mark '${task['taskName']}' as completed?"),
               actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context, false),
-                  child: const Text("Cancel"),
-                ),
+                TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("Cancel")),
                 TextButton(
                   onPressed: () => Navigator.pop(context, true),
-                  child: const Text(
-                    "Confirm",
-                    style: TextStyle(
-                      color: Color(0xFF1A4789),
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
+                  child: const Text("Confirm", style: TextStyle(color: Color(0xFF1A4789), fontWeight: FontWeight.bold)),
                 ),
               ],
             ),
           );
+          return result ?? false;
         }
 
-        // RIGHT swipe → confirm mark done
+        // LEFT swipe → confirm delete
         if (direction == DismissDirection.endToStart) {
-          return await showDialog(
+          final bool? result = await showDialog<bool>(
             context: context,
             builder: (context) => AlertDialog(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
-              ),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
               title: const Text("Delete Task"),
               content: Text("Are you sure you want to delete '${task['taskName']}'?"),
               actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context, false),
-                  child: const Text("Cancel"),
-                ),
+                TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("Cancel")),
                 TextButton(
                   onPressed: () => Navigator.pop(context, true),
-                  child: const Text(
-                    "Delete",
-                    style: TextStyle(
-                      color: Colors.red,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
+                  child: const Text("Delete", style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
                 ),
               ],
             ),
           );
+          return result ?? false;
         }
-
-        // LEFT swipe → allow delete
-        return true;
+        return false;
       },
 
       onDismissed: (direction) async {
-
-        // MARK DONE
         if (direction == DismissDirection.startToEnd) {
-
           await FirebaseFirestore.instance
               .collection('tasks')
               .doc(task['taskId'])
               .update({'status': "DONE"});
-
-        }
-
-        // DELETE TASK
-        else {
-
-          final deletedTask = task;
-
+        } else {
+          final deletedTask = Map<String, dynamic>.from(task);
           await FirebaseFirestore.instance
               .collection('tasks')
               .doc(task['taskId'])
               .delete();
 
+          if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text("${task['taskName']} deleted"),
