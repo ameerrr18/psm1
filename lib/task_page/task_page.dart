@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'add_newtask.dart';
 import 'package:intl/intl.dart';
+import 'detailtask_page.dart';
 
 class TaskPage extends StatefulWidget {
   final VoidCallback? onBack;
@@ -15,6 +16,7 @@ class _TaskPageState extends State<TaskPage> {
   String searchQuery = "";
   String filterPriority = "All";
   String filterStatus = "All";
+
 
   void _confirmCompleteTask(Map<String, dynamic> task) {
     showDialog(
@@ -385,7 +387,17 @@ class _TaskPageState extends State<TaskPage> {
           );
         }
       },
-      child: AnimatedContainer(
+        child: InkWell(
+          borderRadius: BorderRadius.circular(25),
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => DetailTaskPage(task: task),
+              ),
+            );
+          },
+          child: AnimatedContainer(
         duration: const Duration(milliseconds: 300),
         margin: const EdgeInsets.only(bottom: 15),
         padding: const EdgeInsets.all(20),
@@ -493,6 +505,7 @@ class _TaskPageState extends State<TaskPage> {
           ],
         ),
       ),
+     ),
     );
   }
 
