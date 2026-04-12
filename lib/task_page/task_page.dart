@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'add_newtask.dart';
 import 'package:intl/intl.dart';
 import 'detailtask_page.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class TaskPage extends StatefulWidget {
   final VoidCallback? onBack;
@@ -16,7 +17,7 @@ class _TaskPageState extends State<TaskPage> {
   String searchQuery = "";
   String filterPriority = "All";
   String filterStatus = "All";
-
+  final String currentUserId = FirebaseAuth.instance.currentUser?.uid ?? "";
 
   void _confirmCompleteTask(Map<String, dynamic> task) {
     showDialog(
@@ -231,27 +232,58 @@ class _TaskPageState extends State<TaskPage> {
             child: StreamBuilder<QuerySnapshot>(
               stream: FirebaseFirestore.instance
                   .collection('tasks')
+                  .where('userId', isEqualTo: currentUserId)
                   .orderBy('createdAt', descending: true)
                   .snapshots(),
               builder: (context, snapshot) {
+                if (snapshot.hasError) return Center(child: Text("Error: ${snapshot.error}"));
                 if (!snapshot.hasData) {
                   return const Center(child: CircularProgressIndicator());
                 }
 
                 var docs = snapshot.data!.docs.where((doc) {
                   final data = doc.data() as Map<String, dynamic>;
+
+                  // --- FIX: Handle missing isDeleted field ---
+                  final bool isDeleted = data['isDeleted'] ?? false;
+                  if (isDeleted) return false; // Hide if it is explicitly deleted
+
                   final name = (data['taskName'] ?? "").toLowerCase();
                   final priority = (data['priority'] ?? "");
                   final status = (data['status'] ?? "PENDING");
 
                   bool matchesSearch = name.contains(searchQuery);
-                  bool matchesPriority =
-                      filterPriority == "All" || priority.toUpperCase() == filterPriority.toUpperCase();
-                  bool matchesStatus =
-                      filterStatus == "All" || status.toUpperCase() == filterStatus.toUpperCase();
+                  bool matchesPriority = filterPriority == "All" || priority.toUpperCase() == filterPriority.toUpperCase();
+                  bool matchesStatus = filterStatus == "All" || status.toUpperCase() == filterStatus.toUpperCase();
 
                   return matchesSearch && matchesPriority && matchesStatus;
                 }).toList();
+
+                if (docs.isEmpty) {
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.assignment_late_outlined, size: 60, color: Colors.grey[300]),
+                        const SizedBox(height: 16),
+                        Text(
+                          "No tasks found",
+                          style: TextStyle(
+                            fontSize: 18,
+                            color: Colors.grey[500],
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          searchQuery.isEmpty ? "Start by adding a new task!" : "Try a different search or filter",
+                          style: TextStyle(color: Colors.grey[400]),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+                // --------------------------------------------------------
 
                 docs.sort((a, b) {
                   final aDone = (a['status'] == "DONE") ? 1 : 0;
@@ -264,7 +296,6 @@ class _TaskPageState extends State<TaskPage> {
                   itemCount: docs.length,
                   itemBuilder: (context, index) {
                     final data = docs[index].data() as Map<String, dynamic>;
-                    // Ensure taskID is explicitly available from the document ID
                     data['taskId'] = docs[index].id;
                     return _buildTaskCard(context, data);
                   },
@@ -284,7 +315,7 @@ class _TaskPageState extends State<TaskPage> {
     String formattedDate = DateFormat('MMM d').format(date).toUpperCase();
 
     return Dismissible(
-      // FIX 1: Use ValueKey with the unique taskId to maintain tree consistency
+      // --- FIX: ValueKey ensures unique identity during swipe ---
       key: ValueKey(task['taskId']),
       direction: DismissDirection.horizontal,
 
@@ -311,12 +342,10 @@ class _TaskPageState extends State<TaskPage> {
       ),
 
       confirmDismiss: (direction) async {
-        // RIGHT swipe → confirm mark done
         if (direction == DismissDirection.startToEnd) {
-          // If already done, don't allow swipe right
           if (isDone) return false;
 
-          final bool? result = await showDialog<bool>(
+          return await showDialog<bool>(
             context: context,
             builder: (context) => AlertDialog(
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -331,12 +360,8 @@ class _TaskPageState extends State<TaskPage> {
               ],
             ),
           );
-          return result ?? false;
-        }
-
-        // LEFT swipe → confirm delete
-        if (direction == DismissDirection.endToStart) {
-          final bool? result = await showDialog<bool>(
+        } else {
+          return await showDialog<bool>(
             context: context,
             builder: (context) => AlertDialog(
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -351,179 +376,167 @@ class _TaskPageState extends State<TaskPage> {
               ],
             ),
           );
-          return result ?? false;
         }
-        return false;
       },
 
       onDismissed: (direction) async {
         if (direction == DismissDirection.startToEnd) {
+          // Mark as DONE logic
           await FirebaseFirestore.instance
               .collection('tasks')
               .doc(task['taskId'])
               .update({'status': "DONE"});
         } else {
-          final deletedTask = Map<String, dynamic>.from(task);
-          await FirebaseFirestore.instance
-              .collection('tasks')
-              .doc(task['taskId'])
-              .delete();
+          final String taskId = task['taskId'];
 
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text("${task['taskName']} deleted"),
-              duration: const Duration(seconds: 5),
-              action: SnackBarAction(
-                label: "UNDO",
-                onPressed: () {
-                  FirebaseFirestore.instance
-                      .collection('tasks')
-                      .doc(deletedTask['taskId'])
-                      .set(deletedTask);
-                },
-              ),
-            ),
-          );
+          try {
+            // SOFT DELETE: Move to history instead of deleting permanently
+            await FirebaseFirestore.instance.collection('tasks').doc(taskId).update({
+              'isDeleted': true,
+              'deletedAt': FieldValue.serverTimestamp(),
+            });
+
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text("${task['taskName']} moved to Task History"),
+                  backgroundColor: const Color(0xFF1A4789),
+                  duration: const Duration(seconds: 2),
+                ),
+              );
+            }
+          } catch (e) {
+            debugPrint("Error moving to history: $e");
+          }
         }
       },
-        child: InkWell(
-          borderRadius: BorderRadius.circular(25),
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => DetailTaskPage(task: task),
-              ),
-            );
-          },
-          child: AnimatedContainer(
-        duration: const Duration(milliseconds: 300),
-        margin: const EdgeInsets.only(bottom: 15),
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: isDone ? const Color(0xFFF3F6FA) : Colors.white,
-          borderRadius: BorderRadius.circular(25),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(isDone ? 0.02 : 0.05),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
-            )
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                GestureDetector(
-                  onTap: () {
-                    if (isDone) {
-                      FirebaseFirestore.instance
-                          .collection('tasks')
-                          .doc(task['taskId'])
-                          .update({'status': "PENDING"});
-                    } else {
-                      _confirmCompleteTask(task);
-                    }
-                  },
-                  child: AnimatedScale(
-                    duration: const Duration(milliseconds: 200),
-                    scale: isDone ? 1.2 : 1,
-                    child: Container(
-                      width: 24,
-                      height: 24,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: isDone ? const Color(0xFF1A4789) : Colors.transparent,
-                        border: Border.all(color: const Color(0xFF1A4789), width: 2),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(25),
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => DetailTaskPage(task: task),
+            ),
+          );
+        },
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
+          margin: const EdgeInsets.only(bottom: 15),
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: isDone ? const Color(0xFFF3F6FA) : Colors.white,
+            borderRadius: BorderRadius.circular(25),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(isDone ? 0.02 : 0.05),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              )
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  GestureDetector(
+                    onTap: () {
+                      if (isDone) {
+                        FirebaseFirestore.instance
+                            .collection('tasks')
+                            .doc(task['taskId'])
+                            .update({'status': "PENDING"});
+                      } else {
+                        _confirmCompleteTask(task);
+                      }
+                    },
+                    child: AnimatedScale(
+                      duration: const Duration(milliseconds: 200),
+                      scale: isDone ? 1.2 : 1,
+                      child: Container(
+                        width: 24,
+                        height: 24,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: isDone ? const Color(0xFF1A4789) : Colors.transparent,
+                          border: Border.all(color: const Color(0xFF1A4789), width: 2),
+                        ),
+                        child: isDone
+                            ? const Icon(Icons.check, size: 16, color: Colors.white)
+                            : null,
                       ),
-                      child: isDone
-                          ? const Icon(Icons.check, size: 16, color: Colors.white)
-                          : null,
                     ),
                   ),
-                ),
-                const SizedBox(width: 15),
-                Expanded(
-                  child: Text(
-                    task['taskName'] ?? 'No Title',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: isDone ? Colors.grey : const Color(0xFF1A4789),
-                      decoration:
-                      isDone ? TextDecoration.lineThrough : TextDecoration.none,
+                  const SizedBox(width: 15),
+                  Expanded(
+                    child: Text(
+                      task['taskName'] ?? 'No Title',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: isDone ? Colors.grey : const Color(0xFF1A4789),
+                        decoration: isDone ? TextDecoration.lineThrough : TextDecoration.none,
+                      ),
                     ),
                   ),
-                ),
-                Container(
-                  padding:
-                  const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: isDone
-                        ? Colors.grey.shade300
-                        : _getPriorityColor(task['priority'] ?? 'MEDIUM'),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    task['priority'] ?? 'MEDIUM',
-                    style: TextStyle(
-                      color: isDone ? Colors.grey[600] : Colors.white,
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: isDone
+                          ? Colors.grey.shade300
+                          : _getPriorityColor(task['priority'] ?? 'MEDIUM'),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      task['priority'] ?? 'MEDIUM',
+                      style: TextStyle(
+                        color: isDone ? Colors.grey[600] : Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                const SizedBox(width: 39),
-                Icon(Icons.access_time, size: 14, color: Colors.grey[400]),
-                const SizedBox(width: 4),
-                Text("${task['effort']}H",
-                    style: const TextStyle(color: Colors.grey, fontSize: 12)),
-                const SizedBox(width: 15),
-                Icon(Icons.calendar_today, size: 14, color: Colors.grey[400]),
-                const SizedBox(width: 4),
-                Text(formattedDate,
-                    style: const TextStyle(color: Colors.grey, fontSize: 12)),
-              ],
-            ),
-            const SizedBox(height: 15),
-            Row(
-              children: [
-                const SizedBox(width: 39),
-                _buildAnalyzeButton(),
-                const Spacer(),
-                const Icon(Icons.chevron_right, color: Colors.grey),
-              ],
-            )
-          ],
+                ],
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  const SizedBox(width: 39),
+                  Icon(Icons.access_time, size: 14, color: Colors.grey[400]),
+                  const SizedBox(width: 4),
+                  Text("${task['effort']}H", style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                  const SizedBox(width: 15),
+                  Icon(Icons.calendar_today, size: 14, color: Colors.grey[400]),
+                  const SizedBox(width: 4),
+                  Text(formattedDate, style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                ],
+              ),
+              const SizedBox(height: 15),
+              Row(
+                children: [
+                  const SizedBox(width: 39),
+                  _buildAnalyzeButton(),
+                  const Spacer(),
+                  const Icon(Icons.chevron_right, color: Colors.grey),
+                ],
+              )
+            ],
+          ),
         ),
       ),
-     ),
     );
   }
 
   Widget _buildAnalyzeButton() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-          color: const Color(0xFFF1F4F8),
-          borderRadius: BorderRadius.circular(15)),
+      decoration: BoxDecoration(color: const Color(0xFFF1F4F8), borderRadius: BorderRadius.circular(15)),
       child: const Row(
         children: [
           Icon(Icons.auto_awesome, size: 14, color: Color(0xFF1A4789)),
           SizedBox(width: 6),
-          Text("Analyze Risk",
-              style: TextStyle(
-                  color: Color(0xFF1A4789),
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold)),
+          Text("Analyze Risk", style: TextStyle(color: Color(0xFF1A4789), fontSize: 11, fontWeight: FontWeight.bold)),
         ],
       ),
     );

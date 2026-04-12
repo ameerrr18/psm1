@@ -1,5 +1,7 @@
+import 'package:intl/intl.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class AddNewTask extends StatefulWidget {
   const AddNewTask({super.key});
@@ -17,8 +19,6 @@ class _AddNewTaskState extends State<AddNewTask> {
   String currentStatus = "PENDING";
   DateTime selectedDate = DateTime.now();
   final Color primaryNavy = const Color(0xFF1A4789);
-
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   void _validateAndCreate() {
     if (_taskNameController.text.trim().isEmpty ||
@@ -56,21 +56,38 @@ class _AddNewTaskState extends State<AddNewTask> {
   }
 
   Future<void> _createTask() async {
-    if (_taskNameController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Please enter a task name")),
-      );
-      return;
-    }
+    final User? user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
 
     try {
-      String customId = "TID-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}";
+      // 1. QUERY the collection instead of using .doc()
+      QuerySnapshot userQuery = await FirebaseFirestore.instance
+          .collection('users')
+          .where('uid', isEqualTo: user.uid) // Match the field shown in your screenshot
+          .limit(1)
+          .get();
 
-      DocumentReference docRef = _firestore.collection('tasks').doc(customId);
+      String fetchedUsername = "user";
 
-      await docRef.set({
+      if (userQuery.docs.isNotEmpty) {
+        final data = userQuery.docs.first.data() as Map<String, dynamic>;
+        fetchedUsername = data['username'] ?? "user";
+        print("Found Username: $fetchedUsername");
+      } else {
+        print("No document found with uid field: ${user.uid}");
+      }
+
+      // 2. Format the custom ID
+      String cleanName = fetchedUsername.replaceAll(' ', '').toLowerCase();
+      String timestamp = DateFormat('yyyyMMdd-HHmmss').format(DateTime.now());
+      String customId = "$cleanName-$timestamp";
+      String taskName = _taskNameController.text.toUpperCase();
+
+      // 3. Save Task
+      await FirebaseFirestore.instance.collection('tasks').doc(customId).set({
+        'userId': user.uid,
         'taskId': customId,
-        'taskName': _taskNameController.text.trim(),
+        'taskName': taskName.trim(),
         'taskDate': selectedDate.toIso8601String(),
         'description': _descriptionController.text.trim(),
         'effort': _effortController.text.trim(),
@@ -80,13 +97,9 @@ class _AddNewTaskState extends State<AddNewTask> {
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      if (mounted) {
-        Navigator.pop(context);
-      }
+      if (mounted) Navigator.pop(context);
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Error: $e")),
-      );
+      print("Error: $e");
     }
   }
 
@@ -124,7 +137,14 @@ class _AddNewTaskState extends State<AddNewTask> {
 
             const SizedBox(height: 20),
             _label("EFFORT (HRS)"),
-            _textField(_effortController, "2", keyboardType: TextInputType.number),
+            _textField(
+              _effortController,
+              "2",
+              keyboardType: TextInputType.number,
+              hintStyle: TextStyle(
+                color: Colors.grey.withOpacity(0.6), // 👈 shadow effect here only
+              ),
+            ),
 
             const SizedBox(height: 20),
             _label("PRIORITY"),
@@ -148,16 +168,26 @@ class _AddNewTaskState extends State<AddNewTask> {
     );
   }
 
-  Widget _textField(TextEditingController controller, String hint, {int maxLines = 1, TextInputType keyboardType = TextInputType.text}) {
+  Widget _textField(
+      TextEditingController controller,
+      String hint, {
+        int maxLines = 1,
+        TextInputType keyboardType = TextInputType.text,
+        TextStyle? hintStyle, // 👈 add this
+      }) {
     return TextField(
       controller: controller,
       maxLines: maxLines,
       keyboardType: keyboardType,
       decoration: InputDecoration(
         hintText: hint,
+        hintStyle: hintStyle, // 👈 apply here
         filled: true,
         fillColor: const Color(0xFFF8FAFC),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(15),
+          borderSide: BorderSide.none,
+        ),
       ),
     );
   }

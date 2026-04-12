@@ -1,5 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:planova/profile_page/security_page.dart';
+import 'package:planova/profile_page/task_history_page.dart';
+
+import 'library_history_page.dart';
+import 'notification_page.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -73,10 +78,35 @@ class _ProfilePageState extends State<ProfilePage> {
 
                   const SizedBox(height: 30),
                   _sectionLabel("SETTINGS & SECURITY"),
-                  _buildSettingTile(Icons.notifications_none_rounded, "Notifications", Colors.blue),
-                  _buildSettingTile(Icons.shield_outlined, "Security & Privacy", Colors.green),
-                  _buildSettingTile(Icons.history_rounded, "Library History", Colors.orange),
-                  _buildSettingTile(Icons.restore_rounded, "Task History", Colors.purple),
+                  // Inside your build method, under SETTINGS & SECURITY section:
+
+                  _buildSettingTile(
+                      Icons.notifications_none_rounded,
+                      "Notifications",
+                      Colors.blue,
+                          () => Navigator.push(context, MaterialPageRoute(builder: (context) => const NotificationPage()))
+                  ),
+
+                  _buildSettingTile(
+                      Icons.shield_outlined,
+                      "Security & Privacy",
+                      Colors.green,
+                          () => Navigator.push(context, MaterialPageRoute(builder: (context) => const SecurityPage()))
+                  ),
+
+                  _buildSettingTile(
+                      Icons.history_rounded,
+                      "Library History",
+                      Colors.orange,
+                          () => Navigator.push(context, MaterialPageRoute(builder: (context) => const LibraryHistoryPage()))
+                  ),
+
+                  _buildSettingTile(
+                      Icons.restore_rounded,
+                      "Task History",
+                      Colors.purple,
+                          () => Navigator.push(context, MaterialPageRoute(builder: (context) => const TaskHistoryPage()))
+                  ),
 
                   const SizedBox(height: 40),
                   _buildLogoutAction(),
@@ -179,22 +209,38 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  Widget _buildSettingTile(IconData icon, String title, Color color) {
+  Widget _buildSettingTile(IconData icon, String title, Color color, VoidCallback onTap) {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(15),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(25)),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
-            child: Icon(icon, color: color),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(25),
+        onTap: onTap, // FIX: Triggers navigation when clicked
+        child: Container(
+          padding: const EdgeInsets.all(15),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(25),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.02),
+                blurRadius: 5,
+                offset: const Offset(0, 2),
+              )
+            ],
           ),
-          const SizedBox(width: 15),
-          Expanded(child: Text(title, style: TextStyle(color: primaryNavy, fontWeight: FontWeight.bold))),
-          const Icon(Icons.chevron_right, color: Colors.grey, size: 20),
-        ],
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
+                child: Icon(icon, color: color),
+              ),
+              const SizedBox(width: 15),
+              Expanded(child: Text(title, style: TextStyle(color: primaryNavy, fontWeight: FontWeight.bold))),
+              const Icon(Icons.chevron_right, color: Colors.grey, size: 20),
+            ],
+          ),
+        ),
       ),
     );
   }
