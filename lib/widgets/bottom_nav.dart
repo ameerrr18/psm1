@@ -14,8 +14,7 @@ class CustomBottomNav extends StatefulWidget {
   State<CustomBottomNav> createState() => _CustomBottomNavState();
 }
 
-class _CustomBottomNavState extends State<CustomBottomNav>
-    with SingleTickerProviderStateMixin {
+class _CustomBottomNavState extends State<CustomBottomNav> {
   bool isHubOpen = false;
   final Color primaryNavy = const Color(0xFF1A4789);
 
@@ -42,9 +41,13 @@ class _CustomBottomNavState extends State<CustomBottomNav>
         clipBehavior: Clip.none,
         children: [
 
-          /// TAP BLOCKER (prevents nav bar from stealing taps)
+          /// 🔥 FIXED TAP BLOCKER
           if (isHubOpen)
-            Positioned.fill(
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              height: 200, // only cover hub area, not whole screen
               child: GestureDetector(
                 onTap: toggleHub,
                 child: Container(color: Colors.transparent),
@@ -86,7 +89,7 @@ class _CustomBottomNavState extends State<CustomBottomNav>
               children: [
                 _navItem(Icons.grid_view_rounded, "HOME", 0),
                 _buildCenterHubButton(),
-                _navItem(Icons.person_outline, "PROFILE", 4),
+                _navItem(Icons.person_outline, "PROFILE", 5),
               ],
             ),
           ),
@@ -113,21 +116,10 @@ class _CustomBottomNavState extends State<CustomBottomNav>
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-
-          /// MY TASK
-          _hubOption(Icons.check_circle_outline, "MY TASKS", () {
-            _openPage(1);
-          }),
-
-          /// TEAM
-          _hubOption(Icons.group_outlined, "TEAM", () {
-            _openPage(2);
-          }),
-
-          /// LIBRARY
-          _hubOption(Icons.description_outlined, "LIBRARY", () {
-            _openPage(3);
-          }),
+          _hubOption(Icons.check_circle_outline, "MY TASKS", () => _openPage(1)),
+          _hubOption(Icons.group_outlined, "TEAM", () => _openPage(2)),
+          _hubOption(Icons.description_outlined, "LIBRARY", () => _openPage(3)),
+          _hubOption(Icons.calendar_month_outlined, "CALENDAR", () => _openPage(4)),
         ],
       ),
     );
@@ -137,13 +129,11 @@ class _CustomBottomNavState extends State<CustomBottomNav>
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // Wrapping only the Icon part to ensure it captures the tap
         Material(
           color: Colors.transparent,
           child: InkWell(
             onTap: onTap,
             borderRadius: BorderRadius.circular(15),
-            splashColor: Colors.white24,
             child: Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
@@ -155,9 +145,8 @@ class _CustomBottomNavState extends State<CustomBottomNav>
           ),
         ),
         const SizedBox(height: 8),
-        // Text remains visible but tapping the icon triggers the action
         GestureDetector(
-          onTap: onTap, // Optional: keep text clickable too
+          onTap: onTap,
           child: Text(
             label,
             style: TextStyle(
@@ -184,32 +173,17 @@ class _CustomBottomNavState extends State<CustomBottomNav>
               decoration: BoxDecoration(
                 color: primaryNavy,
                 shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: primaryNavy.withOpacity(0.4),
-                    blurRadius: 15,
-                    offset: const Offset(0, 5),
-                  )
-                ],
               ),
               child: AnimatedRotation(
                 duration: const Duration(milliseconds: 200),
                 turns: isHubOpen ? 0.125 : 0,
-                child: const Icon(
-                  Icons.grid_on_rounded,
-                  color: Colors.white,
-                  size: 30,
-                ),
+                child: const Icon(Icons.grid_on_rounded, color: Colors.white),
               ),
             ),
           ),
           const Text(
             "HUB",
-            style: TextStyle(
-              color: Colors.grey,
-              fontSize: 10,
-              fontWeight: FontWeight.bold,
-            ),
+            style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
           ),
         ],
       ),
@@ -234,13 +208,13 @@ class _CustomBottomNavState extends State<CustomBottomNav>
         children: [
           Icon(
             icon,
-            color: isSelected ? primaryNavy : Colors.grey.withOpacity(0.5),
+            color: isSelected ? primaryNavy : Colors.grey,
           ),
           const SizedBox(height: 4),
           Text(
             label,
             style: TextStyle(
-              color: isSelected ? primaryNavy : Colors.grey.withOpacity(0.5),
+              color: isSelected ? primaryNavy : Colors.grey,
               fontSize: 10,
               fontWeight: FontWeight.bold,
             ),
