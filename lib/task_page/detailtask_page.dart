@@ -7,31 +7,38 @@ class DetailTaskPage extends StatelessWidget {
 
   const DetailTaskPage({super.key, required this.task});
 
-  // Helper to get priority color (matching your TaskPage logic)
+  final Color primaryNavy = const Color(0xFF1A4789);
+  final Color accentBlue = const Color(0xFF4FC3F7);
+  final Color bgLight = const Color(0xFFF8FAFC);
+
   Color _getPriorityColor(String priority) {
     switch (priority.toUpperCase()) {
       case 'CRITICAL': return const Color(0xFFFF5252);
-      case 'HIGH': return const Color(0xFF1A4789);
-      case 'MEDIUM': return const Color(0xFF4FC3F7);
+      case 'HIGH': return primaryNavy;
+      case 'MEDIUM': return accentBlue;
       case 'LOW': return Colors.green;
       default: return Colors.grey;
     }
   }
 
-  Future<void> _deleteTask(BuildContext context) async {
+  // Updated to match your "Move to History" logic
+  Future<void> _moveToHistory(BuildContext context) async {
     try {
       await FirebaseFirestore.instance
           .collection('tasks')
           .doc(task['taskId'])
-          .delete();
+          .update({
+        'isDeleted': true,
+        'deletedAt': FieldValue.serverTimestamp(),
+      });
       if (context.mounted) {
-        Navigator.pop(context); // Go back to list
+        Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("${task['taskName']} deleted")),
+          const SnackBar(content: Text("Task moved to History")),
         );
       }
     } catch (e) {
-      debugPrint("Delete error: $e");
+      debugPrint("Update error: $e");
     }
   }
 
@@ -39,176 +46,210 @@ class DetailTaskPage extends StatelessWidget {
   Widget build(BuildContext context) {
     bool isDone = task['status'] == "DONE";
     DateTime date = DateTime.parse(task['taskDate']);
-    String formattedDate = DateFormat('EEEE, MMMM d, yyyy').format(date);
+    String formattedDate = DateFormat('MMMM dd, yyyy').format(date);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new, color: Color(0xFF1A4789), size: 20),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: const Text("Task Details",
-            style: TextStyle(color: Color(0xFF1A4789), fontWeight: FontWeight.bold)),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
-            onPressed: () => _showDeleteConfirmation(context),
+      backgroundColor: bgLight,
+      body: CustomScrollView(
+        slivers: [
+          // Modern App Bar
+          SliverAppBar(
+            expandedHeight: 120,
+            floating: false,
+            pinned: true,
+            backgroundColor: Colors.white,
+            elevation: 0,
+            leading: IconButton(
+              icon: Icon(Icons.arrow_back_ios_new, color: primaryNavy, size: 20),
+              onPressed: () => Navigator.pop(context),
+            ),
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent),
+                onPressed: () => _showDeleteConfirmation(context),
+              ),
+              const SizedBox(width: 10),
+            ],
+            flexibleSpace: FlexibleSpaceBar(
+              titlePadding: const EdgeInsets.only(left: 60, bottom: 16),
+              title: Text(
+                "Task Details",
+                style: TextStyle(color: primaryNavy, fontWeight: FontWeight.bold, fontSize: 18),
+              ),
+            ),
+          ),
+
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // --- HEADER SECTION ---
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      _buildStatusBadge(isDone),
+                      Text(
+                        "${task['effort']} Hours",
+                        style: TextStyle(color: Colors.grey[600], fontWeight: FontWeight.w600),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    task['taskName'] ?? "Unnamed Task",
+                    style: TextStyle(
+                      fontSize: 32,
+                      fontWeight: FontWeight.bold,
+                      color: primaryNavy,
+                      letterSpacing: -0.5,
+                    ),
+                  ),
+                  const SizedBox(height: 30),
+
+                  // --- INFO CARDS ---
+                  Row(
+                    children: [
+                      _buildDetailCard(
+                        Icons.calendar_month_rounded,
+                        "Due Date",
+                        formattedDate,
+                        Colors.orange,
+                      ),
+                      const SizedBox(width: 15),
+                      _buildDetailCard(
+                        Icons.flag_rounded,
+                        "Priority",
+                        task['priority'] ?? "Medium",
+                        _getPriorityColor(task['priority'] ?? "Medium"),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 40),
+
+                  // --- DESCRIPTION SECTION ---
+                  Text(
+                    "Description",
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: primaryNavy),
+                  ),
+                  const SizedBox(height: 15),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(24),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(30),
+                      boxShadow: [
+                        BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 20, offset: const Offset(0, 10))
+                      ],
+                    ),
+                    child: Text(
+                      (task['description'] == null || task['description'].isEmpty)
+                          ? "No description provided for this task."
+                          : task['description'],
+                      style: TextStyle(fontSize: 16, height: 1.8, color: Colors.blueGrey[800]),
+                    ),
+                  ),
+
+                  const SizedBox(height: 40),
+
+                  // --- AI ANALYSIS ACTION ---
+                  _buildAIButton(),
+                ],
+              ),
+            ),
           ),
         ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24.0),
+    );
+  }
+
+  Widget _buildStatusBadge(bool isDone) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: isDone ? Colors.green[50] : primaryNavy.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(15),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          CircleAvatar(radius: 4, backgroundColor: isDone ? Colors.green : primaryNavy),
+          const SizedBox(width: 8),
+          Text(
+            isDone ? "COMPLETED" : "IN PROGRESS",
+            style: TextStyle(
+              color: isDone ? Colors.green[700] : primaryNavy,
+              fontWeight: FontWeight.bold,
+              fontSize: 12,
+              letterSpacing: 1.1,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDetailCard(IconData icon, String label, String value, Color iconColor) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(25),
+          boxShadow: [
+            BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 15, offset: const Offset(0, 8))
+          ],
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Status Badge
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: isDone ? Colors.green.withOpacity(0.1) : const Color(0xFF1A4789).withOpacity(0.1),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Text(
-                task['status'] ?? "PENDING",
-                style: TextStyle(
-                  color: isDone ? Colors.green : const Color(0xFF1A4789),
-                  fontWeight: FontWeight.bold,
-                  fontSize: 12,
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // Task Name
-            Text(
-              task['taskName'] ?? "Unnamed Task",
-              style: const TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.bold,
-                color: Color(0xFF1A4789),
-              ),
-            ),
-            const SizedBox(height: 24),
-
-            // Information Grid
-            Row(
-              children: [
-                _buildInfoChip(Icons.calendar_today, "Due Date", formattedDate),
-                const SizedBox(width: 12),
-                _buildInfoChip(Icons.timer_outlined, "Effort", "${task['effort']} Hours"),
-              ],
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(color: iconColor.withOpacity(0.1), shape: BoxShape.circle),
+              child: Icon(icon, color: iconColor, size: 20),
             ),
             const SizedBox(height: 12),
-            _buildInfoChip(
-              Icons.flag_outlined,
-              "Priority",
-              task['priority'] ?? "MEDIUM",
-              color: _getPriorityColor(task['priority'] ?? "MEDIUM"),
-            ),
-
-            const SizedBox(height: 32),
-
-            // Description Section
-            const Text(
-              "Description",
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Color(0xFF1A4789),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.03),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
-                  )
-                ],
-              ),
-              child: Text(
-                (task['description'] == null || task['description'].isEmpty)
-                    ? "No description provided for this task."
-                    : task['description'],
-                style: TextStyle(
-                  fontSize: 15,
-                  height: 1.6,
-                  color: Colors.blueGrey[700],
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 40),
-
-            // Bottom Action (Optional: Analyze Risk button style matching TaskPage)
-            Center(
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                decoration: BoxDecoration(
-                    color: const Color(0xFF1A4789),
-                    borderRadius: BorderRadius.circular(30)),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.auto_awesome, size: 20, color: Colors.white),
-                    SizedBox(width: 10),
-                    Text("Run AI Risk Analysis",
-                        style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold)),
-                  ],
-                ),
-              ),
-            ),
+            Text(label, style: TextStyle(color: Colors.grey[500], fontSize: 12)),
+            const SizedBox(height: 4),
+            Text(value, style: TextStyle(color: primaryNavy, fontWeight: FontWeight.bold, fontSize: 15)),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildInfoChip(IconData icon, String label, String value, {Color? color}) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: Colors.white),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.03),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
-            )
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon, size: 20, color: color ?? Colors.grey[400]),
-            const SizedBox(height: 8),
-            Text(label, style: TextStyle(fontSize: 11, color: Colors.grey[500])),
-            const SizedBox(height: 4),
-            Text(value,
-              style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.bold,
-                  color: color ?? const Color(0xFF1A4789)
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+  Widget _buildAIButton() {
+    return Container(
+      width: double.infinity,
+      height: 70,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(colors: [primaryNavy, const Color(0xFF2A5298)]),
+        borderRadius: BorderRadius.circular(25),
+        boxShadow: [
+          BoxShadow(color: primaryNavy.withOpacity(0.3), blurRadius: 20, offset: const Offset(0, 10))
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () {}, // Add AI Logic here
+          borderRadius: BorderRadius.circular(25),
+          child: const Center(
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.auto_awesome, color: Colors.white),
+                SizedBox(width: 12),
+                Text(
+                  "Analyze Risk with Planova AI",
+                  style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -218,17 +259,21 @@ class DetailTaskPage extends StatelessWidget {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text("Delete Task"),
-        content: const Text("Are you sure you want to permanently delete this task?"),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
+        title: const Text("Delete Task?"),
+        content: const Text("This task will be moved to your Task History."),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancel")),
-          TextButton(
+          ElevatedButton(
             onPressed: () {
               Navigator.pop(context);
-              _deleteTask(context);
+              _moveToHistory(context);
             },
-            child: const Text("Delete", style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text("Confirm"),
           ),
         ],
       ),
