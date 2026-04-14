@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:planova/profile_page/security_page.dart';
 import 'package:planova/profile_page/task_history_page.dart';
-
+import 'edit_profile_page.dart';
 import 'library_history_page.dart';
 import 'notification_page.dart';
 
@@ -51,7 +51,12 @@ class _ProfilePageState extends State<ProfilePage> {
         actions: [
           IconButton(
             icon: Icon(Icons.edit_outlined, color: primaryNavy),
-            onPressed: () {},
+        onPressed: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const EditProfilePage()),
+          );
+        }
           ),
           const SizedBox(width: 10),
         ],
