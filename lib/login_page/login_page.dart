@@ -5,7 +5,6 @@ import 'package:planova/main_wrapper.dart';
 import 'package:planova/utils/app_colors.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'signup_page.dart';
-import '../home_page/home_page.dart';
 import 'forgot_password_page.dart';
 
 class LoginPage extends StatefulWidget {

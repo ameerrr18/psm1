@@ -5,6 +5,7 @@ import 'package:planova/profile_page/task_history_page.dart';
 import 'edit_profile_page.dart';
 import 'library_history_page.dart';
 import 'notification_page.dart';
+import 'friends_page.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -84,6 +85,13 @@ class _ProfilePageState extends State<ProfilePage> {
                   const SizedBox(height: 30),
                   _sectionLabel("SETTINGS & SECURITY"),
                   // Inside your build method, under SETTINGS & SECURITY section:
+
+                  _buildSettingTile(
+                      Icons.people_alt_outlined,
+                      "Friends & Social",
+                      const Color(0xFF8DE1E1),
+                          () => Navigator.push(context, MaterialPageRoute(builder: (context) => const FriendsPage()))
+                  ),
 
                   _buildSettingTile(
                       Icons.notifications_none_rounded,

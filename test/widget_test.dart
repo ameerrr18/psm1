@@ -1,4 +1,3 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:planova/main.dart';
 // You may need to import your splash screen here for the test to recognize it

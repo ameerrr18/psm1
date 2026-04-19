@@ -17,6 +17,8 @@ class _AddWorkspacePageState extends State<AddWorkspacePage> {
   final Color bgColor = const Color(0xFFF5F6FB);
 
   bool _isLoading = false;
+  final List<String> _selectedFriends = []; // Stores the long UIDs of selected friends
+  final String currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
 
   /// 🔥 GENERATE CUSTOM WORKSPACE ID
   String _generateWorkspaceId(String name) {
@@ -25,16 +27,22 @@ class _AddWorkspacePageState extends State<AddWorkspacePage> {
     return "$firstWord-$timestamp";
   }
 
+  /// 🔥 CREATE WORKSPACE LOGIC
   Future<void> _createWorkspace() async {
-    if (_nameController.text.trim().isEmpty) return;
+    if (_nameController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Please enter a workspace name")),
+      );
+      return;
+    }
 
     setState(() => _isLoading = true);
 
-    final user = FirebaseAuth.instance.currentUser;
-
     try {
-      String workspaceId =
-      _generateWorkspaceId(_nameController.text.trim());
+      String workspaceId = _generateWorkspaceId(_nameController.text.trim());
+
+      // Combine the creator and selected friends into the members array
+      List<String> allMembers = [currentUid, ..._selectedFriends];
 
       await FirebaseFirestore.instance
           .collection('workspaces')
@@ -43,10 +51,15 @@ class _AddWorkspacePageState extends State<AddWorkspacePage> {
         'workspaceId': workspaceId,
         'name': _nameController.text.trim(),
         'description': _descController.text.trim(),
-        'qr_code': workspaceId, // simple placeholder (can generate real QR later)
+        'qr_code': workspaceId,
         'status': 'active',
-        'createdBy': user?.uid,
-        'members': [user?.uid],
+
+        // 🔥 SETTING THE ADMIN
+        'createdBy': currentUid,
+        'adminId': currentUid, // The person who creates it is the primary Admin
+        'admins': [currentUid], // Using an array allows you to add more admins later
+
+        'members': allMembers,
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       });
@@ -74,10 +87,7 @@ class _AddWorkspacePageState extends State<AddWorkspacePage> {
         ),
         title: Text(
           "New Workspace",
-          style: TextStyle(
-            color: primaryNavy,
-            fontWeight: FontWeight.bold,
-          ),
+          style: TextStyle(color: primaryNavy, fontWeight: FontWeight.bold),
         ),
         centerTitle: true,
       ),
@@ -86,29 +96,46 @@ class _AddWorkspacePageState extends State<AddWorkspacePage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-
             const SizedBox(height: 20),
-
-            /// WORKSPACE NAME
             _label("WORKSPACE NAME"),
             const SizedBox(height: 8),
             _inputField(
               controller: _nameController,
-              hint: "e.g., Marketing Campaign 2024",
+              hint: "e.g., Marketing Campaign 2026",
             ),
 
             const SizedBox(height: 20),
-
-            /// DESCRIPTION
             _label("DESCRIPTION"),
             const SizedBox(height: 8),
             _inputField(
               controller: _descController,
               hint: "What is this group working on?",
-              maxLines: 4,
+              maxLines: 2,
             ),
 
-            const Spacer(),
+            const SizedBox(height: 20),
+            _label("SELECT FRIENDS TO ADD"),
+            const SizedBox(height: 8),
+
+            /// 🔥 FRIEND SELECTOR LIST
+            Expanded(
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.03),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    )
+                  ],
+                ),
+                child: _buildFriendPicker(),
+              ),
+            ),
+
+            const SizedBox(height: 20),
 
             /// CREATE BUTTON
             SizedBox(
@@ -129,29 +156,11 @@ class _AddWorkspacePageState extends State<AddWorkspacePage> {
                   children: [
                     Text(
                       "Create Workspace",
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
                     ),
                     SizedBox(width: 8),
-                    Icon(Icons.arrow_forward_ios, size: 16)
+                    Icon(Icons.arrow_forward_ios, size: 16, color: Colors.white)
                   ],
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 20),
-
-            /// FOOTER TEXT
-            Center(
-              child: Text(
-                "PROJECTS, MEMBERS & TASKS IN ONE PLACE",
-                style: TextStyle(
-                  fontSize: 11,
-                  letterSpacing: 1,
-                  color: Colors.grey[600],
-                  fontWeight: FontWeight.bold,
                 ),
               ),
             ),
@@ -163,7 +172,75 @@ class _AddWorkspacePageState extends State<AddWorkspacePage> {
     );
   }
 
-  /// LABEL
+  /// 🔥 FETCH AND DISPLAY FRIENDS
+  Widget _buildFriendPicker() {
+    return StreamBuilder<QuerySnapshot>(
+      // Get the current user's document to find their 'friends' list
+      stream: FirebaseFirestore.instance
+          .collection('users')
+          .where('uid', isEqualTo: currentUid)
+          .limit(1)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) return Center(child: Text("Error: ${snapshot.error}"));
+        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+        if (snapshot.data!.docs.isEmpty) return const Center(child: Text("User profile not found"));
+
+        var userData = snapshot.data!.docs.first.data() as Map<String, dynamic>;
+        List friendsUids = userData['friends'] ?? [];
+
+        if (friendsUids.isEmpty) {
+          return const Center(
+            child: Text("No friends yet.\nAdd friends in Profile first!", textAlign: TextAlign.center),
+          );
+        }
+
+        return ListView.builder(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          itemCount: friendsUids.length,
+          itemBuilder: (context, index) {
+            String friendUid = friendsUids[index];
+
+            // Use FutureBuilder to get friend details by their internal 'uid' field
+            return FutureBuilder<QuerySnapshot>(
+              future: FirebaseFirestore.instance
+                  .collection('users')
+                  .where('uid', isEqualTo: friendUid)
+                  .limit(1)
+                  .get(),
+              builder: (context, friendSnap) {
+                if (!friendSnap.hasData || friendSnap.data!.docs.isEmpty) return const SizedBox();
+
+                var fData = friendSnap.data!.docs.first.data() as Map<String, dynamic>;
+                String name = fData['username'] ?? "Unknown";
+                String email = fData['email'] ?? "";
+                bool isSelected = _selectedFriends.contains(friendUid);
+
+                return CheckboxListTile(
+                  title: Text(name, style: TextStyle(color: primaryNavy, fontWeight: FontWeight.w600)),
+                  subtitle: Text(email, style: const TextStyle(fontSize: 12)),
+                  value: isSelected,
+                  activeColor: primaryNavy,
+                  checkColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  onChanged: (bool? value) {
+                    setState(() {
+                      if (value == true) {
+                        _selectedFriends.add(friendUid);
+                      } else {
+                        _selectedFriends.remove(friendUid);
+                      }
+                    });
+                  },
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
   Widget _label(String text) {
     return Text(
       text,
@@ -176,7 +253,6 @@ class _AddWorkspacePageState extends State<AddWorkspacePage> {
     );
   }
 
-  /// INPUT FIELD
   Widget _inputField({
     required TextEditingController controller,
     required String hint,
@@ -193,6 +269,7 @@ class _AddWorkspacePageState extends State<AddWorkspacePage> {
         maxLines: maxLines,
         decoration: InputDecoration(
           hintText: hint,
+          hintStyle: const TextStyle(fontSize: 14, color: Colors.grey),
           border: InputBorder.none,
         ),
       ),

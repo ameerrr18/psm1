@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'add_workspace_page.dart';
+import 'workspace_detail_page.dart';
 
 class TeamPage extends StatefulWidget {
   const TeamPage({super.key});
@@ -22,6 +23,7 @@ class _TeamPageState extends State<TeamPage> {
     if (code.isEmpty) return;
 
     final user = FirebaseAuth.instance.currentUser;
+    final String currentUid = user?.uid ?? '';
 
     var query = await FirebaseFirestore.instance
         .collection('workspaces')
@@ -30,15 +32,32 @@ class _TeamPageState extends State<TeamPage> {
         .get();
 
     if (query.docs.isNotEmpty) {
-      await query.docs.first.reference.update({
-        'members': FieldValue.arrayUnion([user?.uid])
+      var workspaceDoc = query.docs.first;
+      var data = workspaceDoc.data();
+
+      // Check if already a member
+      if ((data['members'] as List).contains(currentUid)) {
+        _showSnack("You are already a member!");
+        return;
+      }
+
+      // Create a Join Request
+      await workspaceDoc.reference.collection('joinRequests').doc(currentUid).set({
+        'uid': currentUid,
+        'name': user?.displayName ?? "New User",
+        'email': user?.email,
+        'status': 'pending',
+        'timestamp': FieldValue.serverTimestamp(),
       });
+
       _inviteController.clear();
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Joined successfully!")));
+      _showSnack("Request sent to Admin!");
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Invalid Code")));
+      _showSnack("Invalid Workspace Code");
     }
   }
+
+  void _showSnack(String m) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
 
   @override
   Widget build(BuildContext context) {
@@ -129,6 +148,7 @@ class _TeamPageState extends State<TeamPage> {
                         data['description'] ?? '',
                         "${(data['members'] as List).length} MEMBERS",
                         data['inviteCode'] ?? '',
+                        docs[index].id,
                       );
                     },
                   );
@@ -141,18 +161,35 @@ class _TeamPageState extends State<TeamPage> {
     );
   }
 
-  Widget _buildWorkspaceCard(BuildContext context, String title, String desc, String members, String code) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 20),
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
+  Widget _buildWorkspaceCard(BuildContext context, String title, String desc, String members, String code,String workspaceId) {
+    return InkWell(
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => WorkspaceDetailPage(workspaceId: workspaceId),
+            ),
+          );
+        },
         borderRadius: BorderRadius.circular(25),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 15, offset: const Offset(0, 8))],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 20),
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(25),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.03),
+                blurRadius: 15,
+                offset: const Offset(0, 8),
+              )
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // (KEEP ALL YOUR EXISTING UI HERE — no change)
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -180,6 +217,7 @@ class _TeamPageState extends State<TeamPage> {
           ),
         ],
       ),
+        ),
     );
   }
 }
