@@ -17,15 +17,24 @@ class _AddNewTaskState extends State<AddNewTask> {
 
   String selectedPriority = "MEDIUM";
   String currentStatus = "PENDING";
-  DateTime selectedDate = DateTime.now();
+
+  // 🔥 Separate Start and End Dates
+  DateTime startDate = DateTime.now();
+  DateTime endDate = DateTime.now().add(const Duration(days: 1)); // Default end to tomorrow
+
   final Color primaryNavy = const Color(0xFF1A4789);
 
   void _validateAndCreate() {
     if (_taskNameController.text.trim().isEmpty ||
         _descriptionController.text.trim().isEmpty ||
         _effortController.text.trim().isEmpty) {
+      _showWarningDialog("Please fill in all details before creating the task.");
+      return;
+    }
 
-      _showWarningDialog("Please fill in all details (Title, Description, and Effort) before creating the task.");
+    // 🔥 Logical check: End date must be after or on start date
+    if (endDate.isBefore(startDate)) {
+      _showWarningDialog("End date (Due Date) cannot be before the Start Date.");
       return;
     }
 
@@ -41,7 +50,7 @@ class _AddNewTaskState extends State<AddNewTask> {
           children: [
             Icon(Icons.warning_amber_rounded, color: Colors.orange[700]),
             const SizedBox(width: 10),
-            const Text("Missing Info"),
+            const Text("Action Required"),
           ],
         ),
         content: Text(message),
@@ -60,35 +69,31 @@ class _AddNewTaskState extends State<AddNewTask> {
     if (user == null) return;
 
     try {
-      // 1. QUERY the collection instead of using .doc()
       QuerySnapshot userQuery = await FirebaseFirestore.instance
           .collection('users')
-          .where('uid', isEqualTo: user.uid) // Match the field shown in your screenshot
+          .where('uid', isEqualTo: user.uid)
           .limit(1)
           .get();
 
       String fetchedUsername = "user";
-
       if (userQuery.docs.isNotEmpty) {
         final data = userQuery.docs.first.data() as Map<String, dynamic>;
         fetchedUsername = data['username'] ?? "user";
-        print("Found Username: $fetchedUsername");
-      } else {
-        print("No document found with uid field: ${user.uid}");
       }
 
-      // 2. Format the custom ID
       String cleanName = fetchedUsername.replaceAll(' ', '').toLowerCase();
       String timestamp = DateFormat('yyyyMMdd-HHmmss').format(DateTime.now());
       String customId = "$cleanName-$timestamp";
       String taskName = _taskNameController.text.toUpperCase();
+      bool delete = false;
 
-      // 3. Save Task
       await FirebaseFirestore.instance.collection('tasks').doc(customId).set({
         'userId': user.uid,
         'taskId': customId,
         'taskName': taskName.trim(),
-        'taskDate': selectedDate.toIso8601String(),
+        'isDeleted' : delete,
+        'startDate': startDate.toIso8601String(),
+        'endDate': endDate.toIso8601String(), // This is your Due Date
         'description': _descriptionController.text.trim(),
         'effort': _effortController.text.trim(),
         'priority': selectedPriority,
@@ -114,10 +119,7 @@ class _AddNewTaskState extends State<AddNewTask> {
           icon: Icon(Icons.arrow_back, color: primaryNavy),
           onPressed: () => Navigator.pop(context),
         ),
-        title: Text(
-          "New Task",
-          style: TextStyle(color: primaryNavy, fontWeight: FontWeight.bold),
-        ),
+        title: Text("New Task", style: TextStyle(color: primaryNavy, fontWeight: FontWeight.bold)),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
@@ -132,19 +134,33 @@ class _AddNewTaskState extends State<AddNewTask> {
             _textField(_descriptionController, "Details about the assignment...", maxLines: 3),
 
             const SizedBox(height: 20),
-            _label("DUE DATE"),
-            _datePicker(),
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _label("START DATE"),
+                      _datePicker(isStartDate: true),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 15),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _label("END DATE (DUE)"),
+                      _datePicker(isStartDate: false),
+                    ],
+                  ),
+                ),
+              ],
+            ),
 
             const SizedBox(height: 20),
             _label("EFFORT (HRS)"),
-            _textField(
-              _effortController,
-              "2",
-              keyboardType: TextInputType.number,
-              hintStyle: TextStyle(
-                color: Colors.grey.withOpacity(0.6), // 👈 shadow effect here only
-              ),
-            ),
+            _textField(_effortController, "2", keyboardType: TextInputType.number),
 
             const SizedBox(height: 20),
             _label("PRIORITY"),
@@ -163,54 +179,84 @@ class _AddNewTaskState extends State<AddNewTask> {
       padding: const EdgeInsets.only(bottom: 8),
       child: Text(
         text,
-        style: const TextStyle(color: Colors.grey, fontSize: 12, fontWeight: FontWeight.bold),
+        style: const TextStyle(color: Colors.grey, fontSize: 11, fontWeight: FontWeight.bold),
       ),
     );
   }
 
-  Widget _textField(
-      TextEditingController controller,
-      String hint, {
-        int maxLines = 1,
-        TextInputType keyboardType = TextInputType.text,
-        TextStyle? hintStyle, // 👈 add this
-      }) {
+  Widget _textField(TextEditingController controller, String hint, {int maxLines = 1, TextInputType keyboardType = TextInputType.text}) {
     return TextField(
       controller: controller,
       maxLines: maxLines,
       keyboardType: keyboardType,
       decoration: InputDecoration(
         hintText: hint,
-        hintStyle: hintStyle, // 👈 apply here
         filled: true,
         fillColor: const Color(0xFFF8FAFC),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(15),
-          borderSide: BorderSide.none,
-        ),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none),
       ),
     );
   }
 
-  Widget _datePicker() {
+  Widget _datePicker({required bool isStartDate}) {
+    DateTime displayDate = isStartDate ? startDate : endDate;
+
+    // 🔥 Define "Today" at the start of the day (00:00:00)
+    final DateTime now = DateTime.now();
+    final DateTime today = DateTime(now.year, now.month, now.day);
+
     return GestureDetector(
       onTap: () async {
         DateTime? picked = await showDatePicker(
           context: context,
-          initialDate: selectedDate,
-          firstDate: DateTime.now(),
+          initialDate: displayDate.isBefore(today) ? today : displayDate,
+
+          // 🔥 This prevents picking any date before today
+          firstDate: today,
+
           lastDate: DateTime(2030),
+          builder: (context, child) {
+            return Theme(
+              data: Theme.of(context).copyWith(
+                colorScheme: ColorScheme.light(
+                  primary: primaryNavy, // Header background color
+                  onPrimary: Colors.white, // Header text color
+                  onSurface: primaryNavy, // Body text color
+                ),
+              ),
+              child: child!,
+            );
+          },
         );
-        if (picked != null) setState(() => selectedDate = picked);
+
+        if (picked != null) {
+          setState(() {
+            if (isStartDate) {
+              startDate = picked;
+              // Ensure End Date is at least the same as Start Date
+              if (startDate.isAfter(endDate)) {
+                endDate = startDate;
+              }
+            } else {
+              endDate = picked;
+            }
+          });
+        }
       },
       child: Container(
         padding: const EdgeInsets.all(15),
-        decoration: BoxDecoration(color: const Color(0xFFF8FAFC), borderRadius: BorderRadius.circular(15)),
+        decoration: BoxDecoration(
+            color: const Color(0xFFF8FAFC),
+            borderRadius: BorderRadius.circular(15)
+        ),
         child: Row(
           children: [
-            Icon(Icons.calendar_today, size: 18, color: primaryNavy),
-            const SizedBox(width: 10),
-            Text("${selectedDate.day}/${selectedDate.month}/${selectedDate.year}"),
+            Icon(Icons.calendar_today, size: 16, color: primaryNavy),
+            const SizedBox(width: 8),
+            Text(
+              DateFormat('dd/MM/yyyy').format(displayDate),
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+            ),
           ],
         ),
       ),
@@ -226,7 +272,7 @@ class _AddNewTaskState extends State<AddNewTask> {
         return GestureDetector(
           onTap: () => setState(() => selectedPriority = p),
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
             decoration: BoxDecoration(
               color: isSelected ? primaryNavy : const Color(0xFFF8FAFC),
               borderRadius: BorderRadius.circular(10),

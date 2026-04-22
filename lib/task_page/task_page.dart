@@ -18,6 +18,7 @@ class _TaskPageState extends State<TaskPage> {
   String filterPriority = "All";
   String filterStatus = "All";
   final String currentUserId = FirebaseAuth.instance.currentUser?.uid ?? "";
+  final Set<String> _dismissedTaskIds = {};
 
   void _confirmCompleteTask(Map<String, dynamic> task) {
     showDialog(
@@ -111,21 +112,6 @@ class _TaskPageState extends State<TaskPage> {
                       _filterItem("High", filterPriority, (v) => setState(() => filterPriority = v)),
                       _filterItem("Critical", filterPriority, (v) => setState(() => filterPriority = v)),
                       const SizedBox(height: 15),
-                      const Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 20),
-                        child: Text(
-                          "STATUS",
-                          style: TextStyle(
-                            color: Colors.grey,
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      _filterItem("All", filterStatus, (v) => setState(() => filterStatus = v)),
-                      _filterItem("PENDING", filterStatus, (v) => setState(() => filterStatus = v)),
-                      _filterItem("DONE", filterStatus, (v) => setState(() => filterStatus = v)),
                     ],
                   ),
                 ),
@@ -170,139 +156,159 @@ class _TaskPageState extends State<TaskPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        title: const Text("All Tasks",
-            style: TextStyle(color: Color(0xFF1A4789), fontWeight: FontWeight.bold)),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 16),
-            child: ElevatedButton.icon(
-              onPressed: () => Navigator.push(
-                  context, MaterialPageRoute(builder: (context) => const AddNewTask())),
-              icon: const Icon(Icons.add, size: 18),
-              label: const Text("New"),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF1A4789),
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+    // 1. Wrap the Scaffold in a DefaultTabController
+    return DefaultTabController(
+      length: 3,
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF8FAFC),
+        appBar: AppBar(
+          backgroundColor: Colors.white,
+          elevation: 0,
+          title: const Text("All Tasks",
+              style: TextStyle(color: Color(0xFF1A4789), fontWeight: FontWeight.bold)),
+          actions: [
+            Padding(
+              padding: const EdgeInsets.only(right: 16),
+              child: ElevatedButton.icon(
+                onPressed: () => Navigator.push(
+                    context, MaterialPageRoute(builder: (context) => const AddNewTask())),
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text("New"),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF1A4789),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                ),
               ),
             ),
+          ],
+          // 2. Add the TabBar to the bottom of the AppBar
+          bottom: TabBar(
+            onTap: (index) {
+              setState(() {
+                if (index == 0) filterStatus = "All";
+                if (index == 1) filterStatus = "PENDING";
+                if (index == 2) filterStatus = "DONE";
+              });
+            },
+            labelColor: const Color(0xFF1A4789),
+            unselectedLabelColor: Colors.grey,
+            indicatorColor: const Color(0xFF1A4789),
+            indicatorWeight: 3,
+            tabs: const [
+              Tab(text: "All"),
+              Tab(text: "Pending"),
+              Tab(text: "Done"),
+            ],
           ),
-        ],
-      ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    onChanged: (v) => setState(() => searchQuery = v.toLowerCase()),
-                    decoration: InputDecoration(
-                      hintText: "Search tasks...",
-                      prefixIcon: const Icon(Icons.search, color: Colors.grey),
-                      filled: true,
-                      fillColor: Colors.white,
-                      border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(15),
-                          borderSide: BorderSide.none),
+        ),
+        body: Column(
+          children: [
+            // Search Bar
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      onChanged: (v) => setState(() => searchQuery = v.toLowerCase()),
+                      decoration: InputDecoration(
+                        hintText: "Search tasks...",
+                        prefixIcon: const Icon(Icons.search, color: Colors.grey),
+                        filled: true,
+                        fillColor: Colors.white,
+                        border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(15),
+                            borderSide: BorderSide.none),
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 10),
-                GestureDetector(
-                  onTap: _showFilterMenu,
-                  child: Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                        color: Colors.white, borderRadius: BorderRadius.circular(15)),
-                    child: const Icon(Icons.filter_list, color: Color(0xFF1A4789)),
+                  const SizedBox(width: 10),
+                  GestureDetector(
+                    onTap: _showFilterMenu,
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                          color: Colors.white, borderRadius: BorderRadius.circular(15)),
+                      child: const Icon(Icons.filter_list, color: Color(0xFF1A4789)),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
 
-          Expanded(
-            child: StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance
-                  .collection('tasks')
-                  .where('userId', isEqualTo: currentUserId)
-                  .orderBy('createdAt', descending: true)
-                  .snapshots(),
-              builder: (context, snapshot) {
-                if (snapshot.hasError) return Center(child: Text("Error: ${snapshot.error}"));
-                if (!snapshot.hasData) {
-                  return const Center(child: CircularProgressIndicator());
-                }
+            Expanded(
+              child: StreamBuilder<QuerySnapshot>(
+                stream: FirebaseFirestore.instance
+                    .collection('tasks')
+                    .where('userId', isEqualTo: currentUserId)
+                    .orderBy('createdAt', descending: true)
+                    .snapshots(),
+                builder: (context, snapshot) {
+                  if (snapshot.hasError) return Center(child: Text("Error: ${snapshot.error}"));
+                  if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
 
-                var docs = snapshot.data!.docs.where((doc) {
-                  final data = doc.data() as Map<String, dynamic>;
+                  // 3. The Logic remains safe and filters based on the selected tab
+                  var docs = snapshot.data!.docs.where((doc) {
+                    final data = doc.data() as Map<String, dynamic>;
+                    final String taskId = doc.id;
 
-                  // --- FIX: Handle missing isDeleted field ---
-                  final bool isDeleted = data['isDeleted'] ?? false;
-                  if (isDeleted) return false; // Hide if it is explicitly deleted
+                    if (_dismissedTaskIds.contains(taskId)) return false;
+                    if (data['isDeleted'] ?? false) return false;
 
-                  final name = (data['taskName'] ?? "").toLowerCase();
-                  final priority = (data['priority'] ?? "");
-                  final status = (data['status'] ?? "PENDING");
+                    final String name = (data['taskName'] ?? "").toString().toLowerCase();
+                    final String priority = (data['priority'] ?? "MEDIUM").toString().toUpperCase();
+                    final String status = (data['status'] ?? "PENDING").toString().toUpperCase();
 
-                  bool matchesSearch = name.contains(searchQuery);
-                  bool matchesPriority = filterPriority == "All" || priority.toUpperCase() == filterPriority.toUpperCase();
-                  bool matchesStatus = filterStatus == "All" || status.toUpperCase() == filterStatus.toUpperCase();
+                    bool matchesSearch = name.contains(searchQuery);
+                    bool matchesPriority = filterPriority == "All" || priority == filterPriority.toUpperCase();
 
-                  return matchesSearch && matchesPriority && matchesStatus;
-                }).toList();
+                    // Filter based on the 'filterStatus' updated by the TabBar
+                    bool matchesStatus = filterStatus == "All" || status == filterStatus;
 
-                if (docs.isEmpty) {
-                  return Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.assignment_late_outlined, size: 60, color: Colors.grey[300]),
-                        const SizedBox(height: 16),
-                        Text(
-                          "No tasks found",
-                          style: TextStyle(
-                            fontSize: 18,
-                            color: Colors.grey[500],
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          searchQuery.isEmpty ? "Start by adding a new task!" : "Try a different search or filter",
-                          style: TextStyle(color: Colors.grey[400]),
-                        ),
-                      ],
-                    ),
+                    return matchesSearch && matchesPriority && matchesStatus;
+                  }).toList();
+
+                  if (docs.isEmpty) {
+                    return _buildEmptyState();
+                  }
+
+                  // Sorting logic: Unfinished tasks first
+                  docs.sort((a, b) {
+                    final aDone = (a['status'] == "DONE") ? 1 : 0;
+                    final bDone = (b['status'] == "DONE") ? 1 : 0;
+                    return aDone.compareTo(bDone);
+                  });
+
+                  return ListView.builder(
+                    padding: const EdgeInsets.only(left: 16, right: 16, bottom: 120),
+                    itemCount: docs.length,
+                    itemBuilder: (context, index) {
+                      final data = docs[index].data() as Map<String, dynamic>;
+                      data['taskId'] = docs[index].id;
+                      return _buildTaskCard(context, data);
+                    },
                   );
-                }
-                // --------------------------------------------------------
-
-                docs.sort((a, b) {
-                  final aDone = (a['status'] == "DONE") ? 1 : 0;
-                  final bDone = (b['status'] == "DONE") ? 1 : 0;
-                  return aDone.compareTo(bDone);
-                });
-
-                return ListView.builder(
-                  padding: const EdgeInsets.only(left: 16, right: 16, bottom: 120),
-                  itemCount: docs.length,
-                  itemBuilder: (context, index) {
-                    final data = docs[index].data() as Map<String, dynamic>;
-                    data['taskId'] = docs[index].id;
-                    return _buildTaskCard(context, data);
-                  },
-                );
-              },
+                },
+              ),
             ),
-          ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Refactored Empty State for cleaner code
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.assignment_late_outlined, size: 60, color: Colors.grey[300]),
+          const SizedBox(height: 16),
+          Text("No tasks found", style: TextStyle(fontSize: 18, color: Colors.grey[500], fontWeight: FontWeight.w500)),
+          const SizedBox(height: 8),
+          Text(searchQuery.isEmpty ? "No tasks in this category!" : "Try a different search", style: TextStyle(color: Colors.grey[400])),
         ],
       ),
     );
@@ -310,15 +316,31 @@ class _TaskPageState extends State<TaskPage> {
 
   Widget _buildTaskCard(BuildContext context, Map<String, dynamic> task) {
     bool isDone = task['status'] == "DONE";
+    DateTime expiration = DateTime.now().add(const Duration(days: 30));
 
-    DateTime date = DateTime.parse(task['taskDate']);
-    String formattedDate = DateFormat('MMM d').format(date).toUpperCase();
+    // 🔥 Format the Date Range for the UI
+    String displayDateRange = "";
+    try {
+      if (task.containsKey('startDate') && task.containsKey('endDate')) {
+        DateTime start = DateTime.parse(task['startDate']);
+        DateTime end = DateTime.parse(task['endDate']);
+        String startStr = DateFormat('MMM d').format(start).toUpperCase();
+        String endStr = DateFormat('MMM d').format(end).toUpperCase();
+        displayDateRange = "$startStr - $endStr";
+      } else {
+        // Fallback for older tasks
+        DateTime date = DateTime.parse(task['taskDate'] ?? DateTime.now().toIso8601String());
+        displayDateRange = DateFormat('MMM d').format(date).toUpperCase();
+      }
+    } catch (e) {
+      displayDateRange = "DATE ERROR";
+    }
 
     return Dismissible(
-      // --- FIX: ValueKey ensures unique identity during swipe ---
       key: ValueKey(task['taskId']),
       direction: DismissDirection.horizontal,
 
+      // --- KEEPING YOUR UI: Green Background for Complete ---
       background: Container(
         margin: const EdgeInsets.only(bottom: 15),
         padding: const EdgeInsets.only(left: 20),
@@ -330,6 +352,7 @@ class _TaskPageState extends State<TaskPage> {
         child: const Icon(Icons.check, color: Colors.white),
       ),
 
+      // --- KEEPING YOUR UI: Red Background for Delete ---
       secondaryBackground: Container(
         margin: const EdgeInsets.only(bottom: 15),
         padding: const EdgeInsets.only(right: 20),
@@ -344,7 +367,6 @@ class _TaskPageState extends State<TaskPage> {
       confirmDismiss: (direction) async {
         if (direction == DismissDirection.startToEnd) {
           if (isDone) return false;
-
           return await showDialog<bool>(
             context: context,
             builder: (context) => AlertDialog(
@@ -380,44 +402,38 @@ class _TaskPageState extends State<TaskPage> {
       },
 
       onDismissed: (direction) async {
+        final String taskId = task['taskId'];
+
+        setState(() {
+          _dismissedTaskIds.add(taskId);
+        });
+
         if (direction == DismissDirection.startToEnd) {
-          // Mark as DONE logic
           await FirebaseFirestore.instance
               .collection('tasks')
-              .doc(task['taskId'])
+              .doc(taskId)
               .update({'status': "DONE"});
         } else {
-          final String taskId = task['taskId'];
-
-          try {
-            // SOFT DELETE: Move to history instead of deleting permanently
-            await FirebaseFirestore.instance.collection('tasks').doc(taskId).update({
-              'isDeleted': true,
-              'deletedAt': FieldValue.serverTimestamp(),
-            });
-
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text("${task['taskName']} moved to Task History"),
-                  backgroundColor: const Color(0xFF1A4789),
-                  duration: const Duration(seconds: 2),
-                ),
-              );
-            }
-          } catch (e) {
-            debugPrint("Error moving to history: $e");
-          }
+          await FirebaseFirestore.instance.collection('tasks').doc(taskId).update({
+            'isDeleted': true,
+            'deletedAt': FieldValue.serverTimestamp(),
+            'expireAt': Timestamp.fromDate(expiration),
+          });
         }
+
+        // OPTIONAL: Clean up the local set after a delay to keep memory light
+        Future.delayed(const Duration(seconds: 2), () {
+          if (mounted) {
+            _dismissedTaskIds.remove(taskId);
+          }
+        });
       },
       child: InkWell(
         borderRadius: BorderRadius.circular(25),
         onTap: () {
           Navigator.push(
             context,
-            MaterialPageRoute(
-              builder: (context) => DetailTaskPage(task: task),
-            ),
+            MaterialPageRoute(builder: (context) => DetailTaskPage(task: task)),
           );
         },
         child: AnimatedContainer(
@@ -451,21 +467,15 @@ class _TaskPageState extends State<TaskPage> {
                         _confirmCompleteTask(task);
                       }
                     },
-                    child: AnimatedScale(
-                      duration: const Duration(milliseconds: 200),
-                      scale: isDone ? 1.2 : 1,
-                      child: Container(
-                        width: 24,
-                        height: 24,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: isDone ? const Color(0xFF1A4789) : Colors.transparent,
-                          border: Border.all(color: const Color(0xFF1A4789), width: 2),
-                        ),
-                        child: isDone
-                            ? const Icon(Icons.check, size: 16, color: Colors.white)
-                            : null,
+                    child: Container(
+                      width: 24,
+                      height: 24,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: isDone ? const Color(0xFF1A4789) : Colors.transparent,
+                        border: Border.all(color: const Color(0xFF1A4789), width: 2),
                       ),
+                      child: isDone ? const Icon(Icons.check, size: 16, color: Colors.white) : null,
                     ),
                   ),
                   const SizedBox(width: 15),
@@ -483,18 +493,12 @@ class _TaskPageState extends State<TaskPage> {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
-                      color: isDone
-                          ? Colors.grey.shade300
-                          : _getPriorityColor(task['priority'] ?? 'MEDIUM'),
+                      color: isDone ? Colors.grey.shade300 : _getPriorityColor(task['priority'] ?? 'MEDIUM'),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
                       task['priority'] ?? 'MEDIUM',
-                      style: TextStyle(
-                        color: isDone ? Colors.grey[600] : Colors.white,
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                      ),
+                      style: TextStyle(color: isDone ? Colors.grey[600] : Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
                     ),
                   ),
                 ],
@@ -509,7 +513,8 @@ class _TaskPageState extends State<TaskPage> {
                   const SizedBox(width: 15),
                   Icon(Icons.calendar_today, size: 14, color: Colors.grey[400]),
                   const SizedBox(width: 4),
-                  Text(formattedDate, style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                  // 🔥 Displaying the range here
+                  Text(displayDateRange, style: const TextStyle(color: Colors.grey, fontSize: 12)),
                 ],
               ),
               const SizedBox(height: 15),

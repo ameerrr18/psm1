@@ -1,8 +1,9 @@
+import 'package:intl/intl.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class EditTaskPage extends StatefulWidget {
-  final Map<String, dynamic> task; // Pass the existing task data here
+  final Map<String, dynamic> task; // Task data passed from Detail Page
   const EditTaskPage({super.key, required this.task});
 
   @override
@@ -15,23 +16,25 @@ class _EditTaskPageState extends State<EditTaskPage> {
   late TextEditingController _effortController;
 
   late String selectedPriority;
-  late DateTime selectedDate;
+  late DateTime startDate;
+  late DateTime endDate;
+
   final Color primaryNavy = const Color(0xFF1A4789);
   bool _isSaving = false;
 
   @override
   void initState() {
     super.initState();
-    // Initialize controllers with existing task data
+    // Initialize data from the existing task
     _taskNameController = TextEditingController(text: widget.task['taskName']);
     _descriptionController = TextEditingController(text: widget.task['description']);
-    _effortController = TextEditingController(text: widget.task['effort'].toString());
+    _effortController = TextEditingController(text: widget.task['effort']?.toString() ?? "0");
 
-    // Normalize priority to UPPERCASE to avoid Dropdown/Selection mismatch errors
     selectedPriority = (widget.task['priority'] ?? "MEDIUM").toString().toUpperCase();
 
-    // Parse the existing date
-    selectedDate = DateTime.parse(widget.task['taskDate'] ?? DateTime.now().toIso8601String());
+    // Parse existing dates from Firestore strings
+    startDate = DateTime.parse(widget.task['startDate'] ?? DateTime.now().toIso8601String());
+    endDate = DateTime.parse(widget.task['endDate'] ?? DateTime.now().add(const Duration(days: 1)).toIso8601String());
   }
 
   @override
@@ -46,9 +49,15 @@ class _EditTaskPageState extends State<EditTaskPage> {
     if (_taskNameController.text.trim().isEmpty ||
         _descriptionController.text.trim().isEmpty ||
         _effortController.text.trim().isEmpty) {
-      _showWarningDialog("Please ensure Title, Description, and Effort are filled.");
+      _showWarningDialog("Please ensure all fields are filled before saving.");
       return;
     }
+
+    if (endDate.isBefore(startDate)) {
+      _showWarningDialog("The End Date cannot be earlier than the Start Date.");
+      return;
+    }
+
     _updateTask();
   }
 
@@ -57,10 +66,13 @@ class _EditTaskPageState extends State<EditTaskPage> {
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text("Missing Info"),
+        title: const Text("Action Required", style: TextStyle(fontWeight: FontWeight.bold)),
         content: Text(message),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("OK")),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text("OK", style: TextStyle(color: primaryNavy, fontWeight: FontWeight.bold)),
+          ),
         ],
       ),
     );
@@ -71,17 +83,18 @@ class _EditTaskPageState extends State<EditTaskPage> {
     try {
       await FirebaseFirestore.instance
           .collection('tasks')
-          .doc(widget.task['taskId']) // Use the specific document ID
+          .doc(widget.task['taskId']) // Using the ID from the passed task map
           .update({
         'taskName': _taskNameController.text.trim().toUpperCase(),
         'description': _descriptionController.text.trim(),
+        'startDate': startDate.toIso8601String(),
+        'endDate': endDate.toIso8601String(),
         'effort': _effortController.text.trim(),
-        'taskDate': selectedDate.toIso8601String(),
         'priority': selectedPriority,
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      if (mounted) Navigator.pop(context); // Return to Detail Page
+      if (mounted) Navigator.pop(context); // Go back to Detail Page
     } catch (e) {
       setState(() => _isSaving = false);
       print("Error updating task: $e");
@@ -113,11 +126,32 @@ class _EditTaskPageState extends State<EditTaskPage> {
 
             const SizedBox(height: 20),
             _label("DESCRIPTION"),
-            _textField(_descriptionController, "Details...", maxLines: 3),
+            _textField(_descriptionController, "Assignment details...", maxLines: 3),
 
             const SizedBox(height: 20),
-            _label("DUE DATE"),
-            _datePicker(),
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _label("START DATE"),
+                      _datePicker(isStartDate: true),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 15),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _label("END DATE (DUE)"),
+                      _datePicker(isStartDate: false),
+                    ],
+                  ),
+                ),
+              ],
+            ),
 
             const SizedBox(height: 20),
             _label("EFFORT (HRS)"),
@@ -135,12 +169,15 @@ class _EditTaskPageState extends State<EditTaskPage> {
     );
   }
 
-  // --- UI COMPONENTS (Identical to AddNewTask for consistency) ---
+  // --- REUSABLE DESIGN COMPONENTS ---
 
   Widget _label(String text) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
-      child: Text(text, style: const TextStyle(color: Colors.grey, fontSize: 12, fontWeight: FontWeight.bold)),
+      child: Text(
+        text,
+        style: const TextStyle(color: Colors.grey, fontSize: 11, fontWeight: FontWeight.bold),
+      ),
     );
   }
 
@@ -158,25 +195,49 @@ class _EditTaskPageState extends State<EditTaskPage> {
     );
   }
 
-  Widget _datePicker() {
+  Widget _datePicker({required bool isStartDate}) {
+    DateTime displayDate = isStartDate ? startDate : endDate;
+    final DateTime today = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
+
     return GestureDetector(
       onTap: () async {
         DateTime? picked = await showDatePicker(
           context: context,
-          initialDate: selectedDate,
-          firstDate: DateTime.now(),
+          initialDate: displayDate,
+          firstDate: today,
           lastDate: DateTime(2030),
+          builder: (context, child) {
+            return Theme(
+              data: Theme.of(context).copyWith(
+                colorScheme: ColorScheme.light(primary: primaryNavy, onPrimary: Colors.white, onSurface: primaryNavy),
+              ),
+              child: child!,
+            );
+          },
         );
-        if (picked != null) setState(() => selectedDate = picked);
+
+        if (picked != null) {
+          setState(() {
+            if (isStartDate) {
+              startDate = picked;
+              if (startDate.isAfter(endDate)) endDate = startDate;
+            } else {
+              endDate = picked;
+            }
+          });
+        }
       },
       child: Container(
         padding: const EdgeInsets.all(15),
         decoration: BoxDecoration(color: const Color(0xFFF8FAFC), borderRadius: BorderRadius.circular(15)),
         child: Row(
           children: [
-            Icon(Icons.calendar_today, size: 18, color: primaryNavy),
-            const SizedBox(width: 10),
-            Text("${selectedDate.day}/${selectedDate.month}/${selectedDate.year}"),
+            Icon(Icons.calendar_today, size: 16, color: primaryNavy),
+            const SizedBox(width: 8),
+            Text(
+              DateFormat('dd/MM/yyyy').format(displayDate),
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+            ),
           ],
         ),
       ),
@@ -192,7 +253,7 @@ class _EditTaskPageState extends State<EditTaskPage> {
         return GestureDetector(
           onTap: () => setState(() => selectedPriority = p),
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
             decoration: BoxDecoration(
               color: isSelected ? primaryNavy : const Color(0xFFF8FAFC),
               borderRadius: BorderRadius.circular(10),
@@ -214,7 +275,14 @@ class _EditTaskPageState extends State<EditTaskPage> {
       child: ElevatedButton(
         style: ElevatedButton.styleFrom(backgroundColor: primaryNavy, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))),
         onPressed: _validateAndSave,
-        child: const Text("Save Changes", style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+        child: const Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text("Update Smart Task", style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+            SizedBox(width: 10),
+            Icon(Icons.save_as_rounded, color: Colors.white),
+          ],
+        ),
       ),
     );
   }

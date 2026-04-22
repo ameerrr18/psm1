@@ -3,6 +3,9 @@ import 'package:table_calendar/table_calendar.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:planova/task_page/detailtask_page.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:intl/intl.dart';
+
+import '../task_page/add_newtask.dart';
 
 class CalendarPage extends StatefulWidget {
   const CalendarPage({super.key});
@@ -13,6 +16,7 @@ class CalendarPage extends StatefulWidget {
 
 class _CalendarPageState extends State<CalendarPage> {
   final Color primaryNavy = const Color(0xFF1A4789);
+  final Color accentAzure = const Color(0xFF0078D4);
   CalendarFormat _calendarFormat = CalendarFormat.month;
   DateTime _focusedDay = DateTime.now();
   DateTime? _selectedDay;
@@ -21,53 +25,88 @@ class _CalendarPageState extends State<CalendarPage> {
   @override
   void initState() {
     super.initState();
-    _selectedDay = _focusedDay;
+    _selectedDay = _normalizeDate(_focusedDay);
+  }
+
+  DateTime _normalizeDate(DateTime date) {
+    return DateTime(date.year, date.month, date.day);
+  }
+
+  Color _generateTaskColor(String taskId) {
+    final List<Color> modernPalette = [
+      const Color(0xFF0078D4),
+      const Color(0xFF107C10),
+      const Color(0xFFD83B01),
+      const Color(0xFF80397B),
+      const Color(0xFF008272),
+    ];
+    return modernPalette[taskId.hashCode % modernPalette.length];
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: const Color(0xFFFBFDFF),
       appBar: AppBar(
-        title: Text("Schedule", style: TextStyle(color: primaryNavy, fontWeight: FontWeight.bold)),
-        backgroundColor: Colors.white,
+        title: const Text("My Schedule",
+            style: TextStyle(color: Colors.black87, fontWeight: FontWeight.w800, fontSize: 22)),
+        backgroundColor: Colors.transparent,
         elevation: 0,
-        centerTitle: false,
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 16),
+            child: ElevatedButton.icon(
+              onPressed: () => Navigator.push(
+                  context, MaterialPageRoute(builder: (context) => const AddNewTask())),
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text("New"),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF1A4789),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              ),
+            ),
+          ),
+        ],
       ),
+
+
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
             .collection('tasks')
-            .where('userId', isEqualTo: currentUid) // CRITICAL: You must filter by userId first
+            .where('userId', isEqualTo: currentUid)
             .where('isDeleted', isEqualTo: false)
+            .where('status', isNotEqualTo: 'DONE')
             .snapshots(),
         builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            return Center(child: Text("Error: ${snapshot.error}"));
-          }
           if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-          // Map tasks to their dates
+
           Map<DateTime, List<Map<String, dynamic>>> taskMap = {};
           for (var doc in snapshot.data!.docs) {
             var data = doc.data() as Map<String, dynamic>;
             data['taskId'] = doc.id;
-            DateTime date = DateTime.parse(data['taskDate']).toLocal();
-            DateTime dayOnly = DateTime(date.year, date.month, date.day);
-
-            if (taskMap[dayOnly] == null) taskMap[dayOnly] = [];
-            taskMap[dayOnly]!.add(data);
+            try {
+              DateTime start = _normalizeDate(DateTime.parse(data['startDate']).toLocal());
+              DateTime end = _normalizeDate(DateTime.parse(data['endDate']).toLocal());
+              int daysSpan = end.difference(start).inDays;
+              for (int i = 0; i <= daysSpan; i++) {
+                DateTime currentDay = start.add(Duration(days: i));
+                if (taskMap[currentDay] == null) taskMap[currentDay] = [];
+                taskMap[currentDay]!.add(data);
+              }
+            } catch (e) {}
           }
 
-          // Filter tasks for the selected day
-          List<Map<String, dynamic>> selectedTasks = taskMap[DateTime(
-              _selectedDay!.year, _selectedDay!.month, _selectedDay!.day)] ?? [];
+          DateTime selectedKey = _normalizeDate(_selectedDay ?? DateTime.now());
+          List<Map<String, dynamic>> selectedTasks = taskMap[selectedKey] ?? [];
 
           return Column(
             children: [
               _buildCalendarGrid(taskMap),
+              const SizedBox(height: 20),
+              _buildTaskHeader(selectedTasks.length),
               const SizedBox(height: 10),
-              Expanded(
-                child: _buildTaskList(selectedTasks),
-              ),
+              Expanded(child: _buildTaskList(selectedTasks)),
             ],
           );
         },
@@ -77,10 +116,11 @@ class _CalendarPageState extends State<CalendarPage> {
 
   Widget _buildCalendarGrid(Map<DateTime, List<Map<String, dynamic>>> taskMap) {
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 10),
+      margin: const EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(20),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(25),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 15)],
       ),
       child: TableCalendar(
         firstDay: DateTime.utc(2020, 1, 1),
@@ -95,20 +135,47 @@ class _CalendarPageState extends State<CalendarPage> {
           });
         },
         onFormatChanged: (format) => setState(() => _calendarFormat = format),
-        eventLoader: (day) => taskMap[DateTime(day.year, day.month, day.day)] ?? [],
-
-        // Microsoft Style Customization
+        eventLoader: (day) => taskMap[_normalizeDate(day)] ?? [],
+        calendarBuilders: CalendarBuilders(
+          markerBuilder: (context, day, events) {
+            if (events.isEmpty) return const SizedBox();
+            final dayTasks = events.cast<Map<String, dynamic>>();
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: dayTasks.take(3).map((task) => Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 1),
+                  height: 4, width: 8,
+                  decoration: BoxDecoration(
+                    color: _generateTaskColor(task['taskId']),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                )).toList(),
+              ),
+            );
+          },
+        ),
         calendarStyle: CalendarStyle(
-          todayDecoration: BoxDecoration(color: primaryNavy.withOpacity(0.2), shape: BoxShape.circle),
+          todayDecoration: BoxDecoration(color: accentAzure.withOpacity(0.1), shape: BoxShape.circle),
+          todayTextStyle: TextStyle(color: accentAzure, fontWeight: FontWeight.bold),
           selectedDecoration: BoxDecoration(color: primaryNavy, shape: BoxShape.circle),
-          markerDecoration: BoxDecoration(color: Colors.orange, shape: BoxShape.circle),
-          markersMaxCount: 1,
         ),
-        headerStyle: HeaderStyle(
-          formatButtonVisible: false,
-          titleCentered: true,
-          titleTextStyle: TextStyle(color: primaryNavy, fontWeight: FontWeight.bold, fontSize: 16),
-        ),
+        headerStyle: const HeaderStyle(formatButtonVisible: false, titleCentered: true),
+      ),
+    );
+  }
+
+  Widget _buildTaskHeader(int count) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Row(
+        children: [
+          Text(DateFormat('MMMM d').format(_selectedDay!),
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+          const Spacer(),
+          Text("$count Tasks", style: TextStyle(color: primaryNavy, fontWeight: FontWeight.bold)),
+        ],
       ),
     );
   }
@@ -119,61 +186,37 @@ class _CalendarPageState extends State<CalendarPage> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.calendar_today_outlined, size: 50, color: Colors.grey[300]),
-            const SizedBox(height: 10),
-            const Text("No tasks for this day", style: TextStyle(color: Colors.grey)),
+            Icon(Icons.event_note_rounded, size: 60, color: Colors.grey[200]),
+            const Text("No tasks found", style: TextStyle(color: Colors.grey)),
           ],
         ),
       );
     }
 
     return ListView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
+      // Padding adjusted for the Bottom Nav Bar only (100)
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 100),
       itemCount: tasks.length,
       itemBuilder: (context, index) {
         final task = tasks[index];
-        bool isDone = task['status'] == "DONE";
+        Color taskColor = _generateTaskColor(task['taskId']);
 
         return Container(
           margin: const EdgeInsets.only(bottom: 12),
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(15),
-            border: Border.all(color: Colors.grey.withOpacity(0.1)),
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 8)],
           ),
           child: ListTile(
-            contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 5),
-            leading: VerticalDivider(
-              thickness: 4,
-              color: _getPriorityColor(task['priority']),
-            ),
-            title: Text(
-              task['taskName'],
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                color: primaryNavy,
-                decoration: isDone ? TextDecoration.lineThrough : null,
-              ),
-            ),
-            subtitle: Text("${task['effort']} Hours • ${task['priority']}"),
-            trailing: const Icon(Icons.chevron_right, size: 20),
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => DetailTaskPage(task: task)),
-            ),
+            leading: Container(width: 4, height: 30, decoration: BoxDecoration(color: taskColor, borderRadius: BorderRadius.circular(10))),
+            title: Text(task['taskName'], style: const TextStyle(fontWeight: FontWeight.bold)),
+            subtitle: Text("${task['effort']} hrs • ${task['priority']}"),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => DetailTaskPage(task: task))),
           ),
         );
       },
     );
-  }
-
-  Color _getPriorityColor(String? priority) {
-    switch (priority?.toUpperCase()) {
-      case 'CRITICAL': return Colors.red;
-      case 'HIGH': return Colors.orange;
-      case 'MEDIUM': return Colors.blue;
-      case 'LOW': return Colors.green;
-      default: return Colors.grey;
-    }
   }
 }
