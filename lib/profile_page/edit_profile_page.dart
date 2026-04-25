@@ -1,6 +1,10 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:path/path.dart' as p;
 
 class EditProfilePage extends StatefulWidget {
   const EditProfilePage({super.key});
@@ -11,12 +15,14 @@ class EditProfilePage extends StatefulWidget {
 
 class _EditProfilePageState extends State<EditProfilePage> {
   final Color primaryNavy = const Color(0xFF1A4789);
+  final Color lightBg = const Color(0xFFF8FAFC);
 
   final TextEditingController _usernameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
 
-  String role = "user";
-  bool isLoading = false;
+  String? _profileImageUrl;
+  File? _imageFile;
+  bool _isLoading = false;
 
   final user = FirebaseAuth.instance.currentUser;
 
@@ -26,240 +32,197 @@ class _EditProfilePageState extends State<EditProfilePage> {
     _loadUserData();
   }
 
-  /// 🔥 LOAD USER DATA
+  /// 📥 FETCH DATA FROM DB
   Future<void> _loadUserData() async {
     if (user == null) return;
 
-    final doc = await FirebaseFirestore.instance
-        .collection('users')
-        .doc(user!.uid) // IMPORTANT: docId must be uid
-        .get();
-
-    if (doc.exists) {
-      var data = doc.data()!;
-
-      _usernameController.text = data['username'] ?? "";
-      _emailController.text = data['email'] ?? user!.email ?? "";
-      role = data['role'] ?? "user";
-
-      setState(() {});
-    }
-  }
-
-  /// 🔥 RE-AUTHENTICATION (REQUIRED FOR EMAIL CHANGE)
-  Future<void> _reauthenticateUser() async {
-    String password = "";
-
-    await showDialog(
-      context: context,
-      builder: (context) {
-        TextEditingController passController = TextEditingController();
-
-        return AlertDialog(
-          title: const Text("Re-authentication Required"),
-          content: TextField(
-            controller: passController,
-            obscureText: true,
-            decoration: const InputDecoration(
-              labelText: "Enter your password",
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                password = passController.text;
-                Navigator.pop(context);
-              },
-              child: const Text("Confirm"),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (password.isEmpty) {
-      throw Exception("Password required");
-    }
-
-    AuthCredential credential = EmailAuthProvider.credential(
-      email: user!.email!,
-      password: password,
-    );
-
-    await user!.reauthenticateWithCredential(credential);
-  }
-
-  /// 🔥 UPDATE PROFILE
-  Future<void> _updateProfile() async {
-    if (user == null) return;
-
-    setState(() => isLoading = true);
-
     try {
-      /// ✅ EMAIL CHANGE (FIXED)
-      if (_emailController.text.trim() != user!.email) {
-        await _reauthenticateUser();
-
-        await user!.verifyBeforeUpdateEmail(
-          _emailController.text.trim(),
-        );
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-                "Verification email sent. Please verify before email updates."),
-          ),
-        );
-      }
-
-      /// ✅ UPDATE FIRESTORE
-      await FirebaseFirestore.instance
+      // 1. Search for the document where the 'uid' field matches
+      final querySnapshot = await FirebaseFirestore.instance
           .collection('users')
-          .doc(user!.uid)
-          .update({
-        'username': _usernameController.text.trim(),
-        'email': user!.email, // ALWAYS SYNC FROM AUTH
-        'role': role,
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
+          .where('uid', isEqualTo: user!.uid)
+          .limit(1)
+          .get();
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Profile updated successfully")),
-        );
-        Navigator.pop(context);
+      if (querySnapshot.docs.isNotEmpty) {
+        // 2. Get the data from the first matching document
+        var data = querySnapshot.docs.first.data();
+
+        setState(() {
+          // 3. Set the controller text so it shows in the UI
+          _usernameController.text = data['username'] ?? "";
+          _emailController.text = data['email'] ?? "";
+          _profileImageUrl = data['profileImage'];
+        });
       }
     } catch (e) {
-      setState(() => isLoading = false);
+      debugPrint("Error loading: $e");
+    }
+  }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Error: $e")),
-      );
+  /// 📸 PICK IMAGE
+  Future<void> _pickImage() async {
+    final picker = ImagePicker();
+    final pickedFile = await picker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 50
+    );
+
+    if (pickedFile != null) {
+      setState(() {
+        _imageFile = File(pickedFile.path);
+      });
+    }
+  }
+
+  /// ☁️ UPLOAD TO STORAGE & SAVE TO DB
+  Future<void> _saveProfile() async {
+    if (user == null) return;
+    setState(() => _isLoading = true);
+
+    try {
+      String? imageUrl = _profileImageUrl;
+
+      // 1. Upload new image if selected
+      if (_imageFile != null) {
+        final ref = FirebaseStorage.instance
+            .ref()
+            .child('user_profiles')
+            .child('${user!.uid}.jpg');
+
+        await ref.putFile(_imageFile!);
+        imageUrl = await ref.getDownloadURL();
+      }
+
+      // 2. Update the document in Firestore
+      final querySnapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .where('uid', isEqualTo: user!.uid)
+          .get();
+
+      if (querySnapshot.docs.isNotEmpty) {
+        String docId = querySnapshot.docs.first.id; // Get the auto-ID or custom ID
+
+        await FirebaseFirestore.instance.collection('users').doc(docId).update({
+          'username': _usernameController.text.trim(),
+          'profileImage': imageUrl,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("Profile updated successfully")),
+          );
+          Navigator.pop(context);
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Upload failed: $e")),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
-
-      /// APPBAR
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        title: Text("Edit Profile",
-            style: TextStyle(color: primaryNavy, fontWeight: FontWeight.bold)),
         backgroundColor: Colors.white,
         elevation: 0,
+        centerTitle: true,
+        title: Text("Edit Profile",
+            style: TextStyle(color: primaryNavy, fontWeight: FontWeight.bold)),
         leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: primaryNavy),
+          icon: Icon(Icons.arrow_back_ios_new, color: primaryNavy, size: 20),
           onPressed: () => Navigator.pop(context),
         ),
       ),
-
-      /// BODY
-      body: Padding(
-        padding: const EdgeInsets.all(20),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
         child: Column(
           children: [
+            /// PROFILE PICTURE
+            Center(
+              child: Stack(
+                children: [
+                  CircleAvatar(
+                    radius: 65,
+                    backgroundColor: lightBg,
+                    backgroundImage: _imageFile != null
+                        ? FileImage(_imageFile!)
+                        : (_profileImageUrl != null
+                        ? NetworkImage(_profileImageUrl!)
+                        : null) as ImageProvider?,
+                    child: (_imageFile == null && _profileImageUrl == null)
+                        ? Icon(Icons.person, size: 60, color: primaryNavy.withOpacity(0.3))
+                        : null,
+                  ),
+                  Positioned(
+                    bottom: 0,
+                    right: 0,
+                    child: GestureDetector(
+                      onTap: _pickImage,
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(color: primaryNavy, shape: BoxShape.circle),
+                        child: const Icon(Icons.camera_alt, color: Colors.white, size: 18),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 40),
 
-            /// USERNAME
-            _buildInput("Username", _usernameController, Icons.person),
-
+            /// INPUT FIELDS
+            _buildField("USERNAME", _usernameController, Icons.person_outline),
             const SizedBox(height: 20),
+            _buildField("EMAIL", _emailController, Icons.email_outlined, enabled: false),
 
-            /// EMAIL
-            _buildInput("Email", _emailController, Icons.email),
+            const SizedBox(height: 60),
 
-            const SizedBox(height: 20),
-
-            /// ROLE
-            _buildRoleDropdown(),
-
-            const Spacer(),
-
-            /// BUTTON
             SizedBox(
               width: double.infinity,
-              height: 55,
+              height: 56,
               child: ElevatedButton(
-                onPressed: isLoading ? null : _updateProfile,
+                onPressed: _isLoading ? null : _saveProfile,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: primaryNavy,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(20),
-                  ),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  elevation: 0,
                 ),
-                child: isLoading
+                child: _isLoading
                     ? const CircularProgressIndicator(color: Colors.white)
-                    : const Text(
-                  "Save Changes",
-                  style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold),
-                ),
+                    : const Text("Save Profile",
+                    style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
               ),
-            )
+            ),
           ],
         ),
       ),
     );
   }
 
-  /// 🔹 INPUT FIELD
-  Widget _buildInput(
-      String label, TextEditingController controller, IconData icon) {
+  Widget _buildField(String label, TextEditingController controller, IconData icon, {bool enabled = true}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label,
-            style: TextStyle(
-                color: primaryNavy.withOpacity(0.6),
-                fontWeight: FontWeight.bold)),
+        Text(label, style: TextStyle(color: Colors.grey.shade500, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.1)),
         const SizedBox(height: 8),
         TextField(
           controller: controller,
+          enabled: enabled,
+          style: TextStyle(color: primaryNavy, fontWeight: FontWeight.w600),
           decoration: InputDecoration(
-            prefixIcon: Icon(icon, color: primaryNavy),
+            prefixIcon: Icon(icon, color: primaryNavy.withOpacity(0.5)),
             filled: true,
-            fillColor: Colors.white,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(15),
-              borderSide: BorderSide.none,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  /// 🔹 ROLE DROPDOWN
-  Widget _buildRoleDropdown() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text("Role",
-            style: TextStyle(
-                color: primaryNavy.withOpacity(0.6),
-                fontWeight: FontWeight.bold)),
-        const SizedBox(height: 8),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(15),
-          ),
-          child: DropdownButton<String>(
-            value: role,
-            isExpanded: true,
-            underline: const SizedBox(),
-            items: ["user", "admin"]
-                .map((e) => DropdownMenuItem(
-              value: e,
-              child: Text(e),
-            ))
-                .toList(),
-            onChanged: (value) {
-              setState(() => role = value!);
-            },
+            fillColor: enabled ? lightBg : Colors.grey.shade100,
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
           ),
         ),
       ],

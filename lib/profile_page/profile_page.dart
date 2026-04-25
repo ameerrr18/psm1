@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:planova/profile_page/security_page.dart';
@@ -19,12 +20,45 @@ class _ProfilePageState extends State<ProfilePage> {
   final Color lightBg = const Color(0xFFF8FAFC);
   bool isDarkMode = false;
 
-  // Logout Logic: Signs out and clears navigation history
+  String? _profileImageUrl;
+  String _username = "Loading...";
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUserProfile();
+  }
+
+  /// 📥 FETCH DYNAMIC DATA
+  Future<void> _loadUserProfile() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    try {
+      // Searching by the 'uid' field inside the document to handle custom doc IDs
+      final querySnapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .where('uid', isEqualTo: user.uid)
+          .limit(1)
+          .get();
+
+      if (querySnapshot.docs.isNotEmpty) {
+        var data = querySnapshot.docs.first.data();
+        setState(() {
+          _username = data['username'] ?? "User";
+          _profileImageUrl = data['profileImage']; // This maps to your DB field
+        });
+      }
+    } catch (e) {
+      debugPrint("Error loading profile: $e");
+    }
+  }
+
+  /// 🚪 FIXED LOGOUT LOGIC
   Future<void> _handleLogout() async {
     try {
       await FirebaseAuth.instance.signOut();
       if (mounted) {
-        // This removes all screens and sends the user to the Login page
         Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
       }
     } catch (e) {
@@ -45,29 +79,24 @@ class _ProfilePageState extends State<ProfilePage> {
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
-        title: Text(
-          "Profile",
-          style: TextStyle(color: primaryNavy, fontSize: 24, fontWeight: FontWeight.bold),
-        ),
+        title: Text("Profile", style: TextStyle(color: primaryNavy, fontSize: 24, fontWeight: FontWeight.bold)),
         actions: [
           IconButton(
-            icon: Icon(Icons.edit_outlined, color: primaryNavy),
-        onPressed: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const EditProfilePage()),
-          );
-        }
+              icon: Icon(Icons.edit_outlined, color: primaryNavy),
+              onPressed: () async {
+                // Refresh data when returning from Edit Profile
+                await Navigator.push(context, MaterialPageRoute(builder: (_) => const EditProfilePage()));
+                _loadUserProfile();
+              }
           ),
           const SizedBox(width: 10),
         ],
       ),
       body: SingleChildScrollView(
-        // Padding bottom ensures it doesn't get cut off by the custom bottom nav
         padding: const EdgeInsets.only(bottom: 140),
         child: Column(
           children: [
-            _buildUserInfo(user?.displayName ?? "Alex Rivera", user?.email ?? "a.rivera@cs.university.edu"),
+            _buildUserInfo(_username, user?.email ?? "No Email Found"),
 
             Container(
               width: double.infinity,
@@ -84,7 +113,6 @@ class _ProfilePageState extends State<ProfilePage> {
 
                   const SizedBox(height: 30),
                   _sectionLabel("SETTINGS & SECURITY"),
-                  // Inside your build method, under SETTINGS & SECURITY section:
 
                   _buildSettingTile(
                       Icons.people_alt_outlined,
@@ -150,7 +178,13 @@ class _ProfilePageState extends State<ProfilePage> {
               CircleAvatar(
                 radius: 45,
                 backgroundColor: primaryNavy.withOpacity(0.1),
-                child: Icon(Icons.person, size: 40, color: primaryNavy),
+                // ✅ UPDATED IMAGE LOGIC
+                backgroundImage: (_profileImageUrl != null && _profileImageUrl!.isNotEmpty)
+                    ? NetworkImage(_profileImageUrl!)
+                    : null,
+                child: (_profileImageUrl == null || _profileImageUrl!.isEmpty)
+                    ? Icon(Icons.person, size: 40, color: primaryNavy)
+                    : null,
               ),
               Positioned(
                 bottom: 0,
@@ -227,7 +261,7 @@ class _ProfilePageState extends State<ProfilePage> {
       margin: const EdgeInsets.only(bottom: 12),
       child: InkWell(
         borderRadius: BorderRadius.circular(25),
-        onTap: onTap, // FIX: Triggers navigation when clicked
+        onTap: onTap,
         child: Container(
           padding: const EdgeInsets.all(15),
           decoration: BoxDecoration(
@@ -260,7 +294,7 @@ class _ProfilePageState extends State<ProfilePage> {
 
   Widget _buildLogoutAction() {
     return InkWell(
-      onTap: _handleLogout,
+      onTap: _handleLogout, // ✅ FIXED: Link to the actual function
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
