@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'dart:math';
 
 class AddWorkspacePage extends StatefulWidget {
   const AddWorkspacePage({super.key});
@@ -27,6 +28,16 @@ class _AddWorkspacePageState extends State<AddWorkspacePage> {
     return "$firstWord-$timestamp";
   }
 
+  /// 🔥 GENERATE UNIQUE JOIN CODE (e.g., WORK-5921)
+  String _generateJoinCode(String name) {
+    String prefix = name.trim().split(" ").first.toUpperCase();
+    if (prefix.length > 4) prefix = prefix.substring(0, 4);
+
+    // Generate 4 random digits
+    String randomDigits = (Random().nextInt(9000) + 1000).toString();
+    return "$prefix-$randomDigits";
+  }
+
   /// 🔥 CREATE WORKSPACE LOGIC
   Future<void> _createWorkspace() async {
     if (_nameController.text.trim().isEmpty) {
@@ -40,6 +51,8 @@ class _AddWorkspacePageState extends State<AddWorkspacePage> {
 
     try {
       String workspaceId = _generateWorkspaceId(_nameController.text.trim());
+      String joinCode = _generateJoinCode(_nameController.text.trim());
+      String name = _nameController.text.toUpperCase();
 
       // Combine the creator and selected friends into the members array
       List<String> allMembers = [currentUid, ..._selectedFriends];
@@ -49,17 +62,16 @@ class _AddWorkspacePageState extends State<AddWorkspacePage> {
           .doc(workspaceId)
           .set({
         'workspaceId': workspaceId,
-        'name': _nameController.text.trim(),
+        'joinCode': joinCode,
+        'name': name,
         'description': _descController.text.trim(),
         'qr_code': workspaceId,
         'status': 'active',
-
-        // 🔥 SETTING THE ADMIN
         'createdBy': currentUid,
-        'adminId': currentUid, // The person who creates it is the primary Admin
-        'admins': [currentUid], // Using an array allows you to add more admins later
-
+        'adminId': currentUid,
+        'admins': [currentUid],
         'members': allMembers,
+        'pendingRequests': [],
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       });
