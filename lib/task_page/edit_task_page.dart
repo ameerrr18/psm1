@@ -116,53 +116,94 @@ class _EditTaskPageState extends State<EditTaskPage> {
       ),
       body: _isSaving
           ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
+          : Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _label("TASK NAME"),
-            _textField(_taskNameController, "e.g., Database Design"),
 
-            const SizedBox(height: 20),
-            _label("DESCRIPTION"),
-            _textField(_descriptionController, "Assignment details...", maxLines: 3),
+            /// 🔥 SCROLLABLE FORM
+            Expanded(
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _label("TASK NAME"),
+                    _textField(_taskNameController, "e.g., Database Design"),
 
-            const SizedBox(height: 20),
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _label("START DATE"),
-                      _datePicker(isStartDate: true),
-                    ],
-                  ),
+                    const SizedBox(height: 20),
+                    _label("DESCRIPTION"),
+                    _textField(_descriptionController, "Assignment details...", maxLines: 3),
+
+                    const SizedBox(height: 20),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _label("START DATE"),
+                              _datePicker(isStartDate: true),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 15),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _label("END DATE (DUE)"),
+                              _datePicker(isStartDate: false),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 20),
+                    _label("EFFORT (HRS)"),
+                    _textField(_effortController, "2", keyboardType: TextInputType.number),
+
+                    const SizedBox(height: 20),
+                    _label("PRIORITY"),
+                    _prioritySelector(),
+
+                    const SizedBox(height: 20),
+                  ],
                 ),
-                const SizedBox(width: 15),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _label("END DATE (DUE)"),
-                      _datePicker(isStartDate: false),
-                    ],
-                  ),
-                ),
-              ],
+              ),
             ),
 
-            const SizedBox(height: 20),
-            _label("EFFORT (HRS)"),
-            _textField(_effortController, "2", keyboardType: TextInputType.number),
+            /// 🔥 BUTTON (ALWAYS ABOVE KEYBOARD)
+            SizedBox(
+              width: double.infinity,
+              height: 55,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: primaryNavy,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(15),
+                  ),
+                ),
+                onPressed: _validateAndSave,
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      "Update Smart Task",
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    SizedBox(width: 10),
+                    Icon(Icons.save_as_rounded, color: Colors.white),
+                  ],
+                ),
+              ),
+            ),
 
-            const SizedBox(height: 20),
-            _label("PRIORITY"),
-            _prioritySelector(),
-
-            const SizedBox(height: 40),
-            _buildSubmitButton(),
+            const SizedBox(height: 10),
           ],
         ),
       ),

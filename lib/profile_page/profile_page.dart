@@ -5,7 +5,6 @@ import 'package:planova/profile_page/security_page.dart';
 import 'package:planova/profile_page/task_history_page.dart';
 import 'edit_profile_page.dart';
 import 'library_history_page.dart';
-import 'notification_page.dart';
 import 'friends_page.dart';
 
 class ProfilePage extends StatefulWidget {
@@ -75,7 +74,7 @@ class _ProfilePageState extends State<ProfilePage> {
     final user = FirebaseAuth.instance.currentUser;
 
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: lightBg,
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
@@ -93,7 +92,7 @@ class _ProfilePageState extends State<ProfilePage> {
         ],
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.only(bottom: 140),
+        padding: const EdgeInsets.only(bottom: 100),
         child: Column(
           children: [
             _buildUserInfo(_username, user?.email ?? "No Email Found"),
@@ -119,13 +118,6 @@ class _ProfilePageState extends State<ProfilePage> {
                       "Friends & Social",
                       const Color(0xFF8DE1E1),
                           () => Navigator.push(context, MaterialPageRoute(builder: (context) => const FriendsPage()))
-                  ),
-
-                  _buildSettingTile(
-                      Icons.notifications_none_rounded,
-                      "Notifications",
-                      Colors.blue,
-                          () => Navigator.push(context, MaterialPageRoute(builder: (context) => const NotificationPage()))
                   ),
 
                   _buildSettingTile(
@@ -159,6 +151,7 @@ class _ProfilePageState extends State<ProfilePage> {
                       style: TextStyle(color: Colors.grey, fontSize: 10, letterSpacing: 1.5),
                     ),
                   ),
+                  const SizedBox(height: 40),
                 ],
               ),
             ),

@@ -85,15 +85,15 @@ class _AddNewTaskState extends State<AddNewTask> {
       String timestamp = DateFormat('yyyyMMdd-HHmmss').format(DateTime.now());
       String customId = "$cleanName-$timestamp";
       String taskName = _taskNameController.text.toUpperCase();
-      bool delete = false;
 
+      // --- 1. CREATE THE TASK ---
       await FirebaseFirestore.instance.collection('tasks').doc(customId).set({
         'userId': user.uid,
         'taskId': customId,
         'taskName': taskName.trim(),
-        'isDeleted' : delete,
+        'isDeleted': false,
         'startDate': startDate.toIso8601String(),
-        'endDate': endDate.toIso8601String(), // This is your Due Date
+        'endDate': endDate.toIso8601String(),
         'description': _descriptionController.text.trim(),
         'effort': _effortController.text.trim(),
         'priority': selectedPriority,
@@ -102,9 +102,21 @@ class _AddNewTaskState extends State<AddNewTask> {
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
+      // --- 2. CREATE THE NOTIFICATION (NEW) ---
+      // This ensures the NotiPage will show this new entry immediately
+      await FirebaseFirestore.instance.collection('notifications').add({
+        'userId': user.uid, // Field name must match your NotiPage query
+        'title': 'New Task Assigned',
+        'message': 'You created: $taskName',
+        'type': 'task',
+        'targetId': customId, // This links back to the task we just created
+        'timestamp': FieldValue.serverTimestamp(), // Critical for 'orderBy'
+      });
+
       if (mounted) Navigator.pop(context);
     } catch (e) {
-      print("Error: $e");
+      debugPrint("Error: $e");
+      _showWarningDialog("Failed to create task. Please try again.");
     }
   }
 
@@ -121,53 +133,94 @@ class _AddNewTaskState extends State<AddNewTask> {
         ),
         title: Text("New Task", style: TextStyle(color: primaryNavy, fontWeight: FontWeight.bold)),
       ),
-      body: SingleChildScrollView(
+      body: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _label("TASK NAME"),
-            _textField(_taskNameController, "e.g., Database Design"),
 
-            const SizedBox(height: 20),
-            _label("DESCRIPTION"),
-            _textField(_descriptionController, "Details about the assignment...", maxLines: 3),
+            /// 🔥 SCROLLABLE CONTENT
+            Expanded(
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _label("TASK NAME"),
+                    _textField(_taskNameController, "e.g., Database Design"),
 
-            const SizedBox(height: 20),
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _label("START DATE"),
-                      _datePicker(isStartDate: true),
-                    ],
-                  ),
+                    const SizedBox(height: 20),
+                    _label("DESCRIPTION"),
+                    _textField(_descriptionController, "Details about the assignment...", maxLines: 3),
+
+                    const SizedBox(height: 20),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _label("START DATE"),
+                              _datePicker(isStartDate: true),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 15),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _label("END DATE (DUE)"),
+                              _datePicker(isStartDate: false),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 20),
+                    _label("EFFORT (HRS)"),
+                    _textField(_effortController, "2", keyboardType: TextInputType.number),
+
+                    const SizedBox(height: 20),
+                    _label("PRIORITY"),
+                    _prioritySelector(),
+
+                    const SizedBox(height: 20),
+                  ],
                 ),
-                const SizedBox(width: 15),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _label("END DATE (DUE)"),
-                      _datePicker(isStartDate: false),
-                    ],
-                  ),
-                ),
-              ],
+              ),
             ),
 
-            const SizedBox(height: 20),
-            _label("EFFORT (HRS)"),
-            _textField(_effortController, "2", keyboardType: TextInputType.number),
+            /// 🔥 BUTTON (ALWAYS ABOVE KEYBOARD)
+            SizedBox(
+              width: double.infinity,
+              height: 55,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: primaryNavy,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(15),
+                  ),
+                ),
+                onPressed: _validateAndCreate,
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      "Create Smart Task",
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    SizedBox(width: 10),
+                    Icon(Icons.chevron_right, color: Colors.white),
+                  ],
+                ),
+              ),
+            ),
 
-            const SizedBox(height: 20),
-            _label("PRIORITY"),
-            _prioritySelector(),
-
-            const SizedBox(height: 40),
-            _buildSubmitButton(),
+            const SizedBox(height: 10),
           ],
         ),
       ),

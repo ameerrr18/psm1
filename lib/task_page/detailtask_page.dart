@@ -4,8 +4,9 @@ import 'package:intl/intl.dart';
 import 'edit_task_page.dart';
 
 class DetailTaskPage extends StatelessWidget {
-  final Map<String, dynamic> task;
-  const DetailTaskPage({super.key, required this.task});
+  // FIXED: Changed from Map to String ID to match your NotiPage navigation
+  final String taskId;
+  const DetailTaskPage({super.key, required this.taskId});
 
   final Color primaryNavy = const Color(0xFF1A4789);
   final Color bgLight = const Color(0xFFF8FAFC);
@@ -33,7 +34,7 @@ class DetailTaskPage extends StatelessWidget {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text("Moved to Task History"),
+            content: const Text("Moved to Task History"),
             backgroundColor: primaryNavy,
           ),
         );
@@ -56,57 +57,72 @@ class DetailTaskPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: bgLight,
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        centerTitle: true,
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: primaryNavy),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: Text("Task Detail", style: TextStyle(color: primaryNavy, fontWeight: FontWeight.bold)),
-        actions: [
-          IconButton(
-            icon: Icon(Icons.edit_note_rounded, color: primaryNavy, size: 28),
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => EditTaskPage(task: task)),
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.auto_delete_outlined, color: Colors.redAccent, size: 24),
-            onPressed: () => _showDeleteConfirmation(context, task['taskId']),
-          ),
-          const SizedBox(width: 8),
-        ],
-      ),
-      body: StreamBuilder<DocumentSnapshot>(
-        stream: FirebaseFirestore.instance.collection('tasks').doc(task['taskId']).snapshots(),
-        builder: (context, snapshot) {
-          if (!snapshot.hasData || !snapshot.data!.exists) return const Center(child: CircularProgressIndicator());
+    return StreamBuilder<DocumentSnapshot>(
+      // Listen to the taskId passed from the constructor
+      stream: FirebaseFirestore.instance.collection('tasks').doc(taskId).snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(body: Center(child: CircularProgressIndicator()));
+        }
 
-          var data = snapshot.data!.data() as Map<String, dynamic>;
-          String taskId = snapshot.data!.id;
-          bool isDone = (data['status'] ?? "PENDING") == "DONE";
+        if (!snapshot.hasData || !snapshot.data!.exists) {
+          return Scaffold(
+            appBar: AppBar(title: const Text("Task Not Found")),
+            body: const Center(child: Text("This task may have been deleted.")),
+          );
+        }
 
-          // --- New Date Logic ---
-          String startStr = "Not Set";
-          String endStr = "Not Set";
-          if (data['startDate'] != null) {
+        // FETCH DATA
+        var data = snapshot.data!.data() as Map<String, dynamic>;
+        // Ensure taskId is inside the map for EditTaskPage
+        data['taskId'] = snapshot.data!.id;
+
+        bool isDone = (data['status'] ?? "PENDING") == "DONE";
+
+        String startStr = "Not Set";
+        String endStr = "Not Set";
+        if (data['startDate'] != null) {
+          try {
             startStr = DateFormat('MMM dd, yyyy').format(DateTime.parse(data['startDate']));
-          }
-          if (data['endDate'] != null) {
+          } catch (_) {}
+        }
+        if (data['endDate'] != null) {
+          try {
             endStr = DateFormat('MMM dd, yyyy').format(DateTime.parse(data['endDate']));
-          }
+          } catch (_) {}
+        }
 
-          return SingleChildScrollView(
+        return Scaffold(
+          backgroundColor: bgLight,
+          appBar: AppBar(
+            backgroundColor: Colors.white,
+            elevation: 0,
+            centerTitle: true,
+            leading: IconButton(
+              icon: Icon(Icons.arrow_back, color: primaryNavy),
+              onPressed: () => Navigator.pop(context),
+            ),
+            title: Text("Task Detail", style: TextStyle(color: primaryNavy, fontWeight: FontWeight.bold)),
+            actions: [
+              IconButton(
+                icon: Icon(Icons.edit_note_rounded, color: primaryNavy, size: 28),
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => EditTaskPage(task: data)),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.auto_delete_outlined, color: Colors.redAccent, size: 24),
+                onPressed: () => _showDeleteConfirmation(context, taskId),
+              ),
+              const SizedBox(width: 8),
+            ],
+          ),
+          body: SingleChildScrollView(
             padding: const EdgeInsets.all(24.0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Status Badge & Effort Badge
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -115,15 +131,11 @@ class DetailTaskPage extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 20),
-
-                // Task Name
                 Text(
                   data['taskName'] ?? "Unnamed Task",
                   style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: primaryNavy, letterSpacing: -0.5),
                 ),
                 const SizedBox(height: 30),
-
-                // Date Range Cards (Start & End)
                 Row(
                   children: [
                     _buildDetailCard(Icons.calendar_today_rounded, "Start Date", startStr, Colors.blue),
@@ -132,13 +144,8 @@ class DetailTaskPage extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 15),
-
-                // Priority (Full Width Card)
                 _buildPriorityFullCard(data['priority'] ?? "Medium"),
-
                 const SizedBox(height: 40),
-
-                // Description
                 Text("Description", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: primaryNavy)),
                 const SizedBox(height: 15),
                 Container(
@@ -156,22 +163,19 @@ class DetailTaskPage extends StatelessWidget {
                     style: TextStyle(fontSize: 16, height: 1.8, color: Colors.blueGrey[800]),
                   ),
                 ),
-
                 const SizedBox(height: 40),
-
-                // Action Buttons
                 _buildMarkAsDoneButton(taskId, isDone),
                 const SizedBox(height: 15),
                 _buildAIButton(),
               ],
             ),
-          );
-        },
-      ),
+          ),
+        );
+      },
     );
   }
 
-  // --- UPDATED COMPONENTS ---
+  // --- REUSABLE WIDGETS ---
 
   Widget _buildEffortBadge(dynamic effort) {
     return Container(

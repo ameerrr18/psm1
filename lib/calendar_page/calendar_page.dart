@@ -213,7 +213,8 @@ class _CalendarPageState extends State<CalendarPage> {
             title: Text(task['taskName'], style: const TextStyle(fontWeight: FontWeight.bold)),
             subtitle: Text("${task['effort']} hrs • ${task['priority']}"),
             trailing: const Icon(Icons.chevron_right_rounded),
-            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => DetailTaskPage(task: task))),
+            // Use the taskId field from your calendar task object
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => DetailTaskPage(taskId: task['taskId']))),
           ),
         );
       },

@@ -18,7 +18,6 @@ class _TaskPageState extends State<TaskPage> {
   String filterPriority = "All";
   String filterStatus = "All";
   final String currentUserId = FirebaseAuth.instance.currentUser?.uid ?? "";
-  final Set<String> _dismissedTaskIds = {};
 
   void _confirmCompleteTask(Map<String, dynamic> task) {
     showDialog(
@@ -242,18 +241,17 @@ class _TaskPageState extends State<TaskPage> {
                 stream: FirebaseFirestore.instance
                     .collection('tasks')
                     .where('userId', isEqualTo: currentUserId)
+                    .orderBy('status', descending: true) // Sorts 'PENDING' vs 'DONE'
                     .orderBy('createdAt', descending: true)
                     .snapshots(),
                 builder: (context, snapshot) {
                   if (snapshot.hasError) return Center(child: Text("Error: ${snapshot.error}"));
                   if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
 
-                  // 3. The Logic remains safe and filters based on the selected tab
                   var docs = snapshot.data!.docs.where((doc) {
                     final data = doc.data() as Map<String, dynamic>;
-                    final String taskId = doc.id;
 
-                    if (_dismissedTaskIds.contains(taskId)) return false;
+                    // Don't show deleted tasks
                     if (data['isDeleted'] ?? false) return false;
 
                     final String name = (data['taskName'] ?? "").toString().toLowerCase();
@@ -262,23 +260,12 @@ class _TaskPageState extends State<TaskPage> {
 
                     bool matchesSearch = name.contains(searchQuery);
                     bool matchesPriority = filterPriority == "All" || priority == filterPriority.toUpperCase();
-
-                    // Filter based on the 'filterStatus' updated by the TabBar
                     bool matchesStatus = filterStatus == "All" || status == filterStatus;
 
                     return matchesSearch && matchesPriority && matchesStatus;
                   }).toList();
 
-                  if (docs.isEmpty) {
-                    return _buildEmptyState();
-                  }
-
-                  // Sorting logic: Unfinished tasks first
-                  docs.sort((a, b) {
-                    final aDone = (a['status'] == "DONE") ? 1 : 0;
-                    final bDone = (b['status'] == "DONE") ? 1 : 0;
-                    return aDone.compareTo(bDone);
-                  });
+                  if (docs.isEmpty) return _buildEmptyState();
 
                   return ListView.builder(
                     padding: const EdgeInsets.only(left: 16, right: 16, bottom: 120),
@@ -404,10 +391,6 @@ class _TaskPageState extends State<TaskPage> {
       onDismissed: (direction) async {
         final String taskId = task['taskId'];
 
-        setState(() {
-          _dismissedTaskIds.add(taskId);
-        });
-
         if (direction == DismissDirection.startToEnd) {
           await FirebaseFirestore.instance
               .collection('tasks')
@@ -420,20 +403,13 @@ class _TaskPageState extends State<TaskPage> {
             'expireAt': Timestamp.fromDate(expiration),
           });
         }
-
-        // OPTIONAL: Clean up the local set after a delay to keep memory light
-        Future.delayed(const Duration(seconds: 2), () {
-          if (mounted) {
-            _dismissedTaskIds.remove(taskId);
-          }
-        });
       },
       child: InkWell(
         borderRadius: BorderRadius.circular(25),
         onTap: () {
           Navigator.push(
             context,
-            MaterialPageRoute(builder: (context) => DetailTaskPage(task: task)),
+            MaterialPageRoute(builder: (context) => DetailTaskPage(taskId: task['taskId'])),
           );
         },
         child: AnimatedContainer(

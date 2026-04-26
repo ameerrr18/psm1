@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart';
+import 'noti_page.dart';
 import '../ai_page/ai_page.dart';
 
 class HomePage extends StatefulWidget {
@@ -10,20 +13,22 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  // Colors based on your design requirements
+  // Theme Colors
   final Color primaryNavy = const Color(0xFF1A4789);
   final Color secondaryTeal = const Color(0xFF8DE1E1);
   final Color lightBg = const Color(0xFFF8FAFC);
+  final Color card3 = const Color(0xFF475569);
 
-  // Controller for the smooth sliding cards
+  int _weekOffset = 0;
+
   late PageController _pageController;
-  double _currentPage = 0.0;
+  double _currentPage = 1;
+  final String currentUserId = FirebaseAuth.instance.currentUser?.uid ?? "";
 
   @override
   void initState() {
     super.initState();
-    // viewportFraction 0.85 allows the next and previous cards to peek in
-    _pageController = PageController(viewportFraction: 0.85);
+    _pageController = PageController(viewportFraction: 0.82, initialPage: 1);
     _pageController.addListener(() {
       setState(() {
         _currentPage = _pageController.page!;
@@ -33,8 +38,15 @@ class _HomePageState extends State<HomePage> {
 
   @override
   void dispose() {
-    _pageController.dispose(); // Important: Free up memory
+    _pageController.dispose();
     super.dispose();
+  }
+
+  String _getGreeting() {
+    var hour = DateTime.now().hour;
+    if (hour < 12) return "Good Morning";
+    if (hour < 17) return "Good Afternoon";
+    return "Good Evening";
   }
 
   @override
@@ -43,15 +55,19 @@ class _HomePageState extends State<HomePage> {
 
     return Scaffold(
       backgroundColor: lightBg,
+      // This allows the background to extend behind the floating bar
+      extendBody: true,
       body: SafeArea(
+        // We use bottom: false so the content can scroll behind the nav bar area
+        bottom: false,
         child: SingleChildScrollView(
-          // 120 padding to ensure content clears your floating bottom nav bar
-          padding: const EdgeInsets.only(bottom: 140),
+          // Remove the large bottom padding here
+          padding: const EdgeInsets.symmetric(vertical: 0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _buildHeader(user?.displayName ?? "Alex"),
-              const SizedBox(height: 10),
+              const SizedBox(height: 15),
               _buildSlidingCards(),
               const SizedBox(height: 25),
               _buildOptimizeButton(context),
@@ -59,6 +75,7 @@ class _HomePageState extends State<HomePage> {
               _buildPriorityFocusSection(),
               const SizedBox(height: 30),
               _buildStudyVaultSection(),
+              const SizedBox(height: 140),
             ],
           ),
         ),
@@ -68,6 +85,9 @@ class _HomePageState extends State<HomePage> {
 
   // --- 1. Header Section ---
   Widget _buildHeader(String name) {
+    // Logic to determine if there are unread notifications
+    bool hasNotification = true; // Set this based on your data logic
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 25, vertical: 15),
       child: Row(
@@ -85,169 +105,340 @@ class _HomePageState extends State<HomePage> {
                     letterSpacing: 1.1),
               ),
               Text(
-                "Good Morning, $name",
+                "${_getGreeting()}, $name",
                 style: TextStyle(
                     color: primaryNavy,
-                    fontSize: 24,
+                    fontSize: 22,
                     fontWeight: FontWeight.w900),
               ),
             ],
           ),
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(15),
-              boxShadow: [
-                BoxShadow(
-                    color: Colors.black.withOpacity(0.05), blurRadius: 10)
-              ],
+          // Notification Bell Container
+          GestureDetector(
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const NotiPage()),
+              );
+            },
+            child: Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(15),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.08), // High contrast shadow
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  )
+                ],
+              ),
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Icon(Icons.notifications_outlined, color: primaryNavy, size: 26),
+                  if (hasNotification)
+                    Positioned(
+                      right: 2,
+                      top: 2,
+                      child: Container(
+                        width: 8,
+                        height: 8,
+                        decoration: const BoxDecoration(
+                          color: Colors.red,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
-            child: Icon(Icons.bolt, color: primaryNavy, size: 24),
           )
         ],
       ),
     );
   }
 
-  // --- 2. Smooth Sliding Cards with Scaling ---
-  Widget _buildSlidingCards() {
-    return SizedBox(
-      height: 230, // Tall enough for the scaled-up center card
-      child: PageView.builder(
-        controller: _pageController,
-        physics: const BouncingScrollPhysics(),
-        itemCount: 3,
-        itemBuilder: (context, index) {
-          // Math to calculate scaling based on scroll position
-          // Center card is scale 1.0, side cards are scale 0.9
-          double scale = (1 - ((_currentPage - index).abs() * 0.12)).clamp(0.88, 1.0);
-
-          return Center(
-            child: Transform.scale(
-              scale: scale,
-              child: _buildCardContent(index),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildCardContent(int index) {
-    final List<Map<String, dynamic>> cardData = [
-      {
-        "color": primaryNavy,
-        "title": "ACADEMIC PROGRESS",
-        "val": "20%",
-        "sub": "1 OF 5 TASKS",
-        "progress": true,
-        "isWhite": false
-      },
-      {
-        "color": secondaryTeal,
-        "title": "UPCOMING",
-        "val": "4 Deadlines",
-        "sub": "Approaching soon in 2026",
-        "progress": false,
-        "isWhite": false
-      },
-      {
-        "color": Colors.white,
-        "title": "ASSIGNED TO ME",
-        "val": "4 Items",
-        "sub": "In your private backlog",
-        "progress": false,
-        "isWhite": true
-      },
-    ];
-
-    final data = cardData[index];
-    bool isWhite = data['isWhite'];
+  // --- 2. Horizontal Calendar ---
+  Widget _buildHorizontalCalendar({bool isInsideCard = false}) {
+    DateTime viewedDate = DateTime.now().add(Duration(days: _weekOffset));
 
     return Container(
+      margin: isInsideCard ? EdgeInsets.zero : const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 15),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Header with High-Contrast Typography
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              GestureDetector(
+                onTap: () => setState(() => _weekOffset -= 7),
+                child: Icon(Icons.chevron_left, size: 20, color: primaryNavy.withOpacity(0.5)),
+              ),
+              Text(
+                DateFormat('MMMM yyyy').format(viewedDate).toUpperCase(),
+                style: TextStyle(
+                    fontWeight: FontWeight.w900, // Extra bold for contrast
+                    fontSize: 13,
+                    letterSpacing: 1.2,
+                    color: primaryNavy
+                ),
+              ),
+              GestureDetector(
+                onTap: () => setState(() => _weekOffset += 7),
+                child: Icon(Icons.chevron_right, size: 20, color: primaryNavy.withOpacity(0.5)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 15),
+          // Day Labels (Higher weight for visibility)
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: ["S", "M", "T", "W", "T", "F", "S"]
+                .map((d) => Expanded(
+              child: Center(
+                child: Text(d, style: TextStyle(color: Colors.grey[600], fontSize: 10, fontWeight: FontWeight.w800)),
+              ),
+            )).toList(),
+          ),
+          const SizedBox(height: 10),
+          _buildWeekRow(_weekOffset, isInsideCard),
+          const SizedBox(height: 12),
+          _buildWeekRow(_weekOffset + 7, isInsideCard),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWeekRow(int startDay, bool isInsideCard) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: List.generate(7, (index) {
+        DateTime now = DateTime.now();
+        DateTime sunday = now.subtract(Duration(days: now.weekday % 7));
+        DateTime date = sunday.add(Duration(days: startDay + index));
+        String formattedDate = DateFormat('yyyy-MM-dd').format(date);
+        bool isToday = date.day == now.day && date.month == now.month && date.year == now.year;
+
+        return Expanded(
+          child: StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection('tasks')
+                .where('userId', isEqualTo: currentUserId)
+                .where('isDeleted', isEqualTo: false)
+                .snapshots(),
+            builder: (context, snapshot) {
+              int taskCount = 0;
+              if (snapshot.hasData) {
+                taskCount = snapshot.data!.docs.where((doc) {
+                  String taskDate = doc['endDate']?.toString().split('T')[0] ?? "";
+                  return taskDate == formattedDate;
+                }).length;
+              }
+
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 26, // Smaller diameter for cards
+                    height: 26,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: isToday ? primaryNavy : Colors.transparent,
+                    ),
+                    child: Center(
+                      child: Text(
+                        date.day.toString(),
+                        style: TextStyle(
+                          color: isToday ? Colors.white : Colors.black87,
+                          fontWeight: isToday ? FontWeight.bold : FontWeight.normal,
+                          fontSize: 10, // Smaller font to fit 2 weeks
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  // Dot Indicators
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: List.generate(
+                      taskCount > 2 ? 2 : taskCount, // Cap at 2 dots for cards
+                          (i) => Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 0.5),
+                        child: Container(
+                          width: 5,
+                          height: 2,
+                          decoration: BoxDecoration(
+                            color: i == 0 ? Colors.purple : secondaryTeal,
+                            borderRadius: BorderRadius.circular(1),
+                          ),
+                        ),
+                      ),
+                    ),
+                  )
+                ],
+              );
+            },
+          ),
+        );
+      }),
+    );
+  }
+
+  Widget _indicator(Color color) {
+    return Container(
+        width: 6,
+        height: 2,
+        decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(2))
+    );
+  }
+
+  // --- 3. Dynamic Sliding Cards (Linked to Firestore) ---
+  Widget _buildSlidingCards() {
+    return StreamBuilder<QuerySnapshot>(
+      // Logic to fetch tasks based on userId and active status
+      stream: FirebaseFirestore.instance
+          .collection('tasks')
+          .where('userId', isEqualTo: currentUserId)
+          .where('isDeleted', isEqualTo: false)
+          .snapshots(),
+      builder: (context, snapshot) {
+        // Calculate tasks data for the Progress Card
+        int total = snapshot.hasData ? snapshot.data!.docs.length : 0;
+        int completed = snapshot.hasData
+            ? snapshot.data!.docs.where((d) => d['status'] == "DONE").length
+            : 0;
+        double progressValue = (total > 0) ? (completed / total) : 0.0;
+
+        return SizedBox(
+          height: 180,
+          child: PageView.builder(
+            controller: _pageController,
+            itemCount: 3,
+            clipBehavior: Clip.none,
+            itemBuilder: (context, index) {
+              double relativeOffset = (_currentPage - index).abs();
+
+              // Subtle scaling: 1.0 for active, 0.9 for background
+              double scale = (1.03 - (relativeOffset * 0.1)).clamp(0.85, 1.2);
+
+              return Transform.scale(
+                scale: scale,
+                child: Padding(
+                  // REDUCED padding (from 10 to 4) makes the cards sit closer together
+                  padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                  child: _buildCardByIndex(index, progressValue, completed, total, total - completed),
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildCardByIndex(int index, double progress, int done, int total, int pending) {
+    switch (index) {
+      case 0:
+        return _buildInfoCard("UPCOMING", "$pending Deadlines", "Requires Immediate attention", secondaryTeal, false);
+      case 1:
+        return Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(35),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.08), // Slightly deeper shadow for contrast
+                blurRadius: 20,
+                offset: const Offset(0, 10),
+              )
+            ],
+          ),
+          child: _buildHorizontalCalendar(isInsideCard: true),
+        );
+      case 2:
+        return _buildProgressCard(progress, done, total);
+      default:
+        return const SizedBox();
+    }
+  }
+
+  Widget _buildProgressCard(double progress, int completed, int total) {
+    return Container(
       width: double.infinity,
-      margin: const EdgeInsets.symmetric(vertical: 15),
       padding: const EdgeInsets.all(25),
       decoration: BoxDecoration(
-        color: data['color'],
+        color: primaryNavy,
         borderRadius: BorderRadius.circular(35),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(isWhite ? 0.05 : 0.15),
-            blurRadius: 15,
-            offset: const Offset(0, 10),
-          )
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text("ACADEMIC PROGRESS", style: TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.bold)),
+          const Spacer(),
+          Text("${(progress * 100).toInt()}%", style: const TextStyle(color: Colors.white, fontSize: 34, fontWeight: FontWeight.w900)),
+          Text("$completed OF $total TASKS COMPLETED", style: const TextStyle(color: Colors.white70, fontSize: 13)),
+          const SizedBox(height: 15),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: LinearProgressIndicator(
+              value: progress,
+              backgroundColor: Colors.white24,
+              color: secondaryTeal,
+              minHeight: 6,
+            ),
+          ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildInfoCard(String title, String val, String sub, Color color, bool isWhite) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(25),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(35),
+        border: isWhite ? Border.all(color: Colors.grey.shade200) : null,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Text(data['title'],
-              style: TextStyle(
-                  color: isWhite ? Colors.grey : Colors.white70,
-                  fontSize: 10,
-                  fontWeight: FontWeight.bold)),
+          Text(title, style: TextStyle(color: isWhite ? Colors.white : Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
           const Spacer(),
-          Text(data['val'],
-              style: TextStyle(
-                  color: isWhite ? primaryNavy : Colors.white,
-                  fontSize: 34,
-                  fontWeight: FontWeight.w900)),
-          Text(data['sub'],
-              style: TextStyle(
-                  color: isWhite ? Colors.grey : Colors.white70,
-                  fontSize: 13)),
-          if (data['progress']) ...[
-            const SizedBox(height: 15),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: LinearProgressIndicator(
-                  value: 0.2,
-                  backgroundColor: Colors.white24,
-                  color: secondaryTeal,
-                  minHeight: 6),
-            ),
-          ]
+          Text(val, style: TextStyle(color: isWhite ? Colors.white : Colors.white, fontSize: 30, fontWeight: FontWeight.w900)),
+          Text(sub, style: TextStyle(color: isWhite ? Colors.grey : Colors.white70, fontSize: 13)),
         ],
       ),
     );
   }
 
-// --- 3. Optimize Intelligence Button ---
-  Widget _buildOptimizeButton(BuildContext context) { // Add context here
+  // --- 4. AI Button ---
+  Widget _buildOptimizeButton(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 25),
       child: InkWell(
-        onTap: () {
-          // Navigate to your AI Page
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => const AIPage()),
-          );
-        },
-        borderRadius: BorderRadius.circular(22), // Keeps the ripple inside the shape
+        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const AIPage())),
+        borderRadius: BorderRadius.circular(22),
         child: Container(
           height: 65,
           decoration: BoxDecoration(
-            color: secondaryTeal.withOpacity(0.4),
+            gradient: LinearGradient(colors: [secondaryTeal.withOpacity(0.4), secondaryTeal.withOpacity(0.1)]),
             borderRadius: BorderRadius.circular(22),
             border: Border.all(color: secondaryTeal, width: 1.5),
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.psychology_outlined, color: primaryNavy),
+              Icon(Icons.auto_awesome, color: primaryNavy, size: 20),
               const SizedBox(width: 12),
-              Text(
-                "Optimize Intelligence",
-                style: TextStyle(
-                  color: primaryNavy,
-                  fontWeight: FontWeight.w900,
-                  fontSize: 16,
-                ),
-              ),
+              Text("Optimize Intelligence", style: TextStyle(color: primaryNavy, fontWeight: FontWeight.w900, fontSize: 16)),
             ],
           ),
         ),
@@ -255,19 +446,34 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // --- 4. Priority Focus ---
+  // --- 5. Priority Focus (CRITICAL ONLY) ---
   Widget _buildPriorityFocusSection() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 25),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text("Priority Focus",
-              style: TextStyle(
-                  color: primaryNavy, fontSize: 20, fontWeight: FontWeight.bold)),
+          Text("Priority Focus", style: TextStyle(color: primaryNavy, fontSize: 18, fontWeight: FontWeight.bold)),
           const SizedBox(height: 15),
-          _priorityItem("DB Optimization: B-Tree...", "MAR 23, 2026", "CRITICAL"),
-          _priorityItem("FYP Prototype Alpha V1", "APR 10, 2026", "CRITICAL"),
+          StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection('tasks')
+                .where('userId', isEqualTo: currentUserId)
+                .where('priority', isEqualTo: 'CRITICAL')
+                .where('status', isEqualTo: 'PENDING')
+                .limit(2)
+                .snapshots(),
+            builder: (context, snapshot) {
+              if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                return _priorityItem("All tasks clear", "Great job!", "Done");
+              }
+              return Column(
+                children: snapshot.data!.docs.map((doc) {
+                  return _priorityItem(doc['taskName'], "DUE: ${doc['endDate'].toString().split('T')[0]}", "CRITICAL");
+                }).toList(),
+              );
+            },
+          ),
         ],
       ),
     );
@@ -280,59 +486,57 @@ class _HomePageState extends State<HomePage> {
       decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(25),
-          boxShadow: [
-            BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10)
-          ]),
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10)]),
       child: Row(
         children: [
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title,
-                    style: TextStyle(
-                        color: primaryNavy,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16)),
+                Text(title, style: TextStyle(color: primaryNavy, fontWeight: FontWeight.bold, fontSize: 15)),
                 const SizedBox(height: 5),
-                Text(date,
-                    style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                Text(date, style: const TextStyle(color: Colors.grey, fontSize: 11)),
               ],
             ),
           ),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
-                color: Colors.red.withOpacity(0.1),
+                color: status == "CRITICAL" ? Colors.red.withOpacity(0.1) : Colors.green.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(8)),
-            child: Text(status,
-                style: const TextStyle(
-                    color: Colors.red,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 10)),
+            child: Text(status, style: TextStyle(color: status == "CRITICAL" ? Colors.red : Colors.green, fontWeight: FontWeight.bold, fontSize: 10)),
           ),
         ],
       ),
     );
   }
 
-  // --- 5. Study Vault Section ---
+  // --- 6. Study Vault (Live Subject Folders) ---
   Widget _buildStudyVaultSection() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 25),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text("Study Vault",
-              style: TextStyle(
-                  color: primaryNavy, fontSize: 20, fontWeight: FontWeight.bold)),
+          Text("Subject Vault", style: TextStyle(color: primaryNavy, fontSize: 18, fontWeight: FontWeight.bold)),
           const SizedBox(height: 15),
-          Row(
-            children: [
-              _vaultItem("Mobile_Dev", "PDF"),
-              const SizedBox(width: 15),
-              _vaultItem("PostgreSQL_P", "PDF"),
-            ],
+          StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection('folders')
+                .where('userId', isEqualTo: currentUserId)
+                .where('status', isEqualTo: 'active')
+                .limit(2)
+                .snapshots(),
+            builder: (context, snapshot) {
+              if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                return const Text("No folders created yet.", style: TextStyle(color: Colors.grey, fontSize: 12));
+              }
+              return Row(
+                children: snapshot.data!.docs.map((doc) {
+                  return _vaultItem(doc['folderName'], "FOLDER");
+                }).toList(),
+              );
+            },
           ),
         ],
       ),
@@ -342,24 +546,19 @@ class _HomePageState extends State<HomePage> {
   Widget _vaultItem(String name, String type) {
     return Expanded(
       child: Container(
+        margin: const EdgeInsets.only(right: 12),
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(25),
-            boxShadow: [
-              BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10)
-            ]),
+            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10)]),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(Icons.description_outlined, color: primaryNavy, size: 30),
+            Icon(Icons.folder_zip, color: primaryNavy, size: 28),
             const SizedBox(height: 15),
-            Text(name,
-                style: TextStyle(
-                    color: primaryNavy,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13)),
-            Text(type, style: const TextStyle(color: Colors.grey, fontSize: 11)),
+            Text(name, style: TextStyle(color: primaryNavy, fontWeight: FontWeight.w900, fontSize: 12, overflow: TextOverflow.ellipsis)),
+            Text(type, style: const TextStyle(color: Colors.grey, fontSize: 10)),
           ],
         ),
       ),
