@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../ai_page/ai_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -53,7 +54,7 @@ class _HomePageState extends State<HomePage> {
               const SizedBox(height: 10),
               _buildSlidingCards(),
               const SizedBox(height: 25),
-              _buildOptimizeButton(),
+              _buildOptimizeButton(context),
               const SizedBox(height: 30),
               _buildPriorityFocusSection(),
               const SizedBox(height: 30),
@@ -214,28 +215,41 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // --- 3. Optimize Intelligence Button ---
-  Widget _buildOptimizeButton() {
+// --- 3. Optimize Intelligence Button ---
+  Widget _buildOptimizeButton(BuildContext context) { // Add context here
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 25),
-      child: Container(
-        height: 65,
-        decoration: BoxDecoration(
-          color: secondaryTeal.withOpacity(0.4),
-          borderRadius: BorderRadius.circular(22),
-          border: Border.all(color: secondaryTeal, width: 1.5),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.psychology_outlined, color: primaryNavy),
-            const SizedBox(width: 12),
-            Text("Optimize Intelligence",
+      child: InkWell(
+        onTap: () {
+          // Navigate to your AI Page
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const AIPage()),
+          );
+        },
+        borderRadius: BorderRadius.circular(22), // Keeps the ripple inside the shape
+        child: Container(
+          height: 65,
+          decoration: BoxDecoration(
+            color: secondaryTeal.withOpacity(0.4),
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: secondaryTeal, width: 1.5),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.psychology_outlined, color: primaryNavy),
+              const SizedBox(width: 12),
+              Text(
+                "Optimize Intelligence",
                 style: TextStyle(
-                    color: primaryNavy,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 16)),
-          ],
+                  color: primaryNavy,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 16,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
