@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:intl/intl.dart';
 
 class FriendsPage extends StatefulWidget {
   const FriendsPage({super.key});
@@ -10,117 +9,41 @@ class FriendsPage extends StatefulWidget {
   State<FriendsPage> createState() => _FriendsPageState();
 }
 
-class _FriendsPageState extends State<FriendsPage> {
+class _FriendsPageState extends State<FriendsPage> with SingleTickerProviderStateMixin {
   final Color primaryNavy = const Color(0xFF1A4789);
+  final Color accentBlue = const Color(0xFF3B82F6);
   final TextEditingController _searchController = TextEditingController();
   final String currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+  late TabController _tabController;
+  List<dynamic> _currentUserFriends = [];
 
   Map<String, dynamic>? _searchedUser;
-  bool _isSearching = false;
 
-  // Logic: Search User Details
-  Future<void> _searchUser() async {
-    String email = _searchController.text.trim().toLowerCase();
-    if (email.isEmpty) return;
-
-    final query = await FirebaseFirestore.instance
-        .collection('users')
-        .where('email', isEqualTo: email)
-        .limit(1)
-        .get();
-
-    if (query.docs.isNotEmpty) {
-      setState(() {
-        _searchedUser = query.docs.first.data();
-        // CRITICAL: Use the 'uid' field from the document data, NOT the document ID
-        _searchedUser!['uid'] = query.docs.first.data()['uid'];
-      });
-    } else {
-      _showSnack("User not found");
-    }
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 2, vsync: this);
   }
-
-  // Logic: Send Friend Request
-  Future<void> _sendRequest() async {
-    if (_searchedUser == null) return;
-
-    final String currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
-
-    // CRITICAL FIX: Use the UID we found during the search
-    final String targetUid = _searchedUser!['uid'];
-
-    if (targetUid == currentUid) {
-      _showSnack("You can't add yourself!");
-      return;
-    }
-
-    await FirebaseFirestore.instance.collection('friendRequests').add({
-      'from': FirebaseAuth.instance.currentUser?.uid,
-      'to': targetUid, // Now this will match what the recipient sees as their own UID
-      'status': 'pending',
-      'timestamp': FieldValue.serverTimestamp(),
-      'fromEmail': FirebaseAuth.instance.currentUser?.email,
-      'fromName': FirebaseAuth.instance.currentUser?.displayName ?? "User",
-    });
-
-    setState(() => _searchedUser = null);
-    _searchController.clear();
-    _showSnack("Request Sent!");
-  }
-
-  void _showSnack(String msg) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
+      backgroundColor: const Color(0xFFF1F5F9),
       appBar: AppBar(
-        title: Text("Community", style: TextStyle(color: primaryNavy, fontWeight: FontWeight.bold)),
-        backgroundColor: Colors.white, elevation: 0,
-        leading: BackButton(color: primaryNavy),
+        title: const Text("Community", style: TextStyle(fontWeight: FontWeight.w900)),
+        centerTitle: true,
+        backgroundColor: Colors.white,
+        foregroundColor: primaryNavy,
+        elevation: 0,
       ),
       body: Column(
         children: [
-          // Search Section
-          Padding(
-            padding: const EdgeInsets.all(20.0),
-            child: Column(
-              children: [
-                TextField(
-                  controller: _searchController,
-                  decoration: InputDecoration(
-                    hintText: "Enter friend's email...",
-                    filled: true, fillColor: Colors.white,
-                    prefixIcon: const Icon(Icons.search),
-                    suffixIcon: IconButton(
-                        icon: const Icon(Icons.arrow_forward),
-                        onPressed: _searchUser
-                    ),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none),
-                  ),
-                ),
-                if (_searchedUser != null) _buildUserPreviewCard(),
-              ],
-            ),
-          ),
-
+          _buildSearchHeader(),
+          _buildCustomTabBar(),
           Expanded(
-            child: DefaultTabController(
-              length: 2,
-              child: Column(
-                children: [
-                  TabBar(
-                    labelColor: primaryNavy,
-                    indicatorColor: primaryNavy,
-                    tabs: const [Tab(text: "Requests"), Tab(text: "Friends")],
-                  ),
-                  Expanded(
-                    child: TabBarView(
-                      children: [_buildPendingList(), _buildFriendsList()],
-                    ),
-                  ),
-                ],
-              ),
+            child: TabBarView(
+              controller: _tabController,
+              children: [_buildPendingList(), _buildFriendsList()],
             ),
           ),
         ],
@@ -128,83 +51,169 @@ class _FriendsPageState extends State<FriendsPage> {
     );
   }
 
-  // Inside your _FriendsPageState class
+  Widget _buildSearchHeader() {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      color: Colors.white,
+      child: Column(
+        children: [
+          TextField(
+            controller: _searchController,
+            onSubmitted: (_) => _searchUser(),
+            decoration: InputDecoration(
+              hintText: "Search by email...",
+              prefixIcon: const Icon(Icons.search_rounded, color: Colors.grey),
+              suffixIcon: IconButton(
+                onPressed: _searchUser,
+                icon: Icon(Icons.arrow_forward_rounded, color: accentBlue),
+              ),
+              filled: true,
+              fillColor: const Color(0xFFF1F5F9),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: BorderSide.none),
+            ),
+          ),
+          if (_searchedUser != null) _buildUserPreviewCard(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCustomTabBar() {
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 15, horizontal: 20),
+      padding: const EdgeInsets.all(5),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(15)),
+      child: TabBar(
+        controller: _tabController,
+        indicator: BoxDecoration(color: primaryNavy, borderRadius: BorderRadius.circular(12)),
+        labelColor: Colors.white,
+        unselectedLabelColor: Colors.grey,
+        indicatorSize: TabBarIndicatorSize.tab,
+        tabs: const [Tab(text: "Requests"), Tab(text: "Friends")],
+      ),
+    );
+  }
 
   Widget _buildUserPreviewCard() {
     if (_searchedUser == null) return const SizedBox.shrink();
 
-    // Handle date formatting safely
-    String memberSince = "Recent";
-    if (_searchedUser!['createdAt'] != null) {
-      DateTime date = (_searchedUser!['createdAt'] as Timestamp).toDate();
-      memberSince = DateFormat('MMM dd, yyyy').format(date);
-    }
+    // Check if this person is already in our friends list
+    bool isAlreadyFriend = _currentUserFriends.contains(_searchedUser!['uid']);
 
     return Container(
-      margin: const EdgeInsets.only(top: 20),
-      padding: const EdgeInsets.all(20),
+      margin: const EdgeInsets.only(top: 15),
+      padding: const EdgeInsets.all(15),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(25),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 15,
-            offset: const Offset(0, 5),
+        color: primaryNavy,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [BoxShadow(color: primaryNavy.withOpacity(0.3), blurRadius: 10, offset: const Offset(0, 5))],
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            backgroundColor: Colors.white.withOpacity(0.2),
+            child: Text((_searchedUser!['username'] ?? "U")[0].toUpperCase(), style: const TextStyle(color: Colors.white)),
+          ),
+          const SizedBox(width: 15),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(_searchedUser!['username'], style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                Text(_searchedUser!['email'], style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 11)),
+              ],
+            ),
+          ),ElevatedButton(
+            // If already friends, onPressed is null (disables button)
+            onPressed: isAlreadyFriend ? null : _sendRequest,
+            style: ElevatedButton.styleFrom(
+              // Color when button is ENABLED (Add)
+              backgroundColor: Colors.white,
+              foregroundColor: primaryNavy,
+
+              // Color when button is DISABLED (Friend)
+              disabledBackgroundColor: Colors.white.withOpacity(0.2), // Light glass effect
+              disabledForegroundColor: Colors.white, // This makes the "Friend" text visible
+
+              shape: const StadiumBorder(),
+              elevation: isAlreadyFriend ? 0 : 2,
+            ),
+            child: Text(
+                isAlreadyFriend ? "Friend" : "Add",
+                style: const TextStyle(fontWeight: FontWeight.bold)
+            ),
           )
         ],
       ),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              CircleAvatar(
-                radius: 30,
-                backgroundColor: primaryNavy.withOpacity(0.1),
-                child: Text(
-                  (_searchedUser!['username'] ?? "U")[0].toUpperCase(),
-                  style: TextStyle(color: primaryNavy, fontWeight: FontWeight.bold, fontSize: 20),
-                ),
-              ),
-              const SizedBox(width: 15),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _searchedUser!['username'] ?? "Unknown User",
-                      style: TextStyle(color: primaryNavy, fontSize: 18, fontWeight: FontWeight.bold),
+    );
+  }
+
+
+  Widget _buildFriendsList() {
+    return StreamBuilder<DocumentSnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('users')
+          .where('uid', isEqualTo: currentUid)
+          .limit(1)
+          .snapshots()
+          .map((s) => s.docs.first),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+        List friends = (snapshot.data!.data() as Map)['friends'] ?? [];
+
+        if (friends.isEmpty) return const Center(child: Text("No friends yet."));
+
+        return ListView.builder(
+          padding: const EdgeInsets.all(20),
+          itemCount: friends.length,
+          itemBuilder: (context, index) {
+            return FutureBuilder<QuerySnapshot>(
+              future: FirebaseFirestore.instance.collection('users').where('uid', isEqualTo: friends[index]).get(),
+              builder: (context, fSnap) {
+                if (!fSnap.hasData || fSnap.data!.docs.isEmpty) return const SizedBox.shrink();
+                var fData = fSnap.data!.docs.first.data() as Map;
+                String targetUid = fData['uid'];
+
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(18)),
+                  child: ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: CircleAvatar(
+                      backgroundColor: accentBlue.withOpacity(0.1),
+                      child: Text(fData['username'][0].toUpperCase(), style: TextStyle(color: accentBlue)),
                     ),
-                    Text(
-                      _searchedUser!['email'] ?? "",
-                      style: const TextStyle(color: Colors.grey, fontSize: 13),
+                    title: Text(fData['username'], style: const TextStyle(fontWeight: FontWeight.bold)),
+                    subtitle: Text(fData['email'], style: const TextStyle(fontSize: 12)),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.person_remove_outlined, color: Colors.redAccent, size: 22),
+                      onPressed: () => _confirmUnfriend(targetUid, fData['username']),
                     ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const Divider(height: 30),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text("MEMBER SINCE", style: TextStyle(color: Colors.grey, fontSize: 10, fontWeight: FontWeight.bold)),
-                  Text(memberSince, style: TextStyle(color: primaryNavy, fontWeight: FontWeight.w600)),
-                ],
-              ),
-              ElevatedButton(
-                onPressed: _sendRequest,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: primaryNavy,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  padding: const EdgeInsets.symmetric(horizontal: 25),
-                ),
-                child: const Text("Add Friend", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-              ),
-            ],
+                  ),
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _confirmUnfriend(String targetUid, String name) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Unfriend?"),
+        content: Text("Are you sure you want to remove $name from your friends list?"),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancel")),
+          TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+                _unfriendUser(targetUid);
+              },
+              child: const Text("Remove", style: TextStyle(color: Colors.red))
           ),
         ],
       ),
@@ -284,54 +293,91 @@ class _FriendsPageState extends State<FriendsPage> {
     }
   }
 
-  Widget _buildFriendsList() {
-    return StreamBuilder<DocumentSnapshot>(
-      // 1. Get the current user's document to see their friends list
-      stream: FirebaseFirestore.instance
+  // Logic: Search User Details
+  Future<void> _searchUser() async {
+    String email = _searchController.text.trim().toLowerCase();
+    if (email.isEmpty) return;
+
+    try {
+      // Fetch current user's data to get latest friends list
+      final me = await FirebaseFirestore.instance
           .collection('users')
-          .where('uid', isEqualTo: FirebaseAuth.instance.currentUser?.uid)
+          .where('uid', isEqualTo: currentUid)
           .limit(1)
-          .snapshots()
-          .map((snapshot) => snapshot.docs.first),
-      builder: (context, snapshot) {
-        if (snapshot.hasError) return Center(child: Text("Error: ${snapshot.error}"));
-        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+          .get();
 
-        var data = snapshot.data!.data() as Map<String, dynamic>?;
-        List friends = data?['friends'] ?? [];
+      if (me.docs.isNotEmpty) {
+        _currentUserFriends = me.docs.first.data()['friends'] ?? [];
+      }
 
-        if (friends.isEmpty) return const Center(child: Text("No friends yet."));
+      // Search for target user
+      final query = await FirebaseFirestore.instance
+          .collection('users')
+          .where('email', isEqualTo: email)
+          .limit(1)
+          .get();
 
-        return ListView.builder(
-          itemCount: friends.length,
-          itemBuilder: (context, index) {
-            // 2. Query for the friend's user data using their long UID string
-            return FutureBuilder<QuerySnapshot>(
-              future: FirebaseFirestore.instance
-                  .collection('users')
-                  .where('uid', isEqualTo: friends[index])
-                  .limit(1)
-                  .get(),
-              builder: (context, friendSnap) {
-                if (!friendSnap.hasData || friendSnap.data!.docs.isEmpty) {
-                  return const SizedBox.shrink();
-                }
-
-                var friendData = friendSnap.data!.docs.first.data() as Map<String, dynamic>;
-
-                return ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: primaryNavy.withOpacity(0.1),
-                    child: Text((friendData['username'] ?? "U")[0].toUpperCase()),
-                  ),
-                  title: Text(friendData['username'] ?? "User"),
-                  subtitle: Text(friendData['email'] ?? ""),
-                );
-              },
-            );
-          },
-        );
-      },
-    );
+      if (query.docs.isNotEmpty) {
+        setState(() {
+          _searchedUser = query.docs.first.data();
+          _searchedUser!['uid'] = query.docs.first.data()['uid'];
+        });
+      } else {
+        _showSnack("User not found");
+      }
+    } catch (e) {
+      _showSnack("Search failed");
+    }
   }
+
+  Future<void> _unfriendUser(String targetUid) async {
+    try {
+      await FirebaseFirestore.instance.runTransaction((transaction) async {
+        var myDoc = await FirebaseFirestore.instance.collection('users').where('uid', isEqualTo: currentUid).limit(1).get();
+        var theirDoc = await FirebaseFirestore.instance.collection('users').where('uid', isEqualTo: targetUid).limit(1).get();
+
+        if (myDoc.docs.isNotEmpty && theirDoc.docs.isNotEmpty) {
+          transaction.update(myDoc.docs.first.reference, {
+            'friends': FieldValue.arrayRemove([targetUid])
+          });
+          transaction.update(theirDoc.docs.first.reference, {
+            'friends': FieldValue.arrayRemove([currentUid])
+          });
+        }
+      });
+      _showSnack("Unfriended successfully");
+    } catch (e) {
+      _showSnack("Failed to unfriend");
+    }
+  }
+
+  // Logic: Send Friend Request
+  Future<void> _sendRequest() async {
+    if (_searchedUser == null) return;
+
+    final String currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+
+    // CRITICAL FIX: Use the UID we found during the search
+    final String targetUid = _searchedUser!['uid'];
+
+    if (targetUid == currentUid) {
+      _showSnack("You can't add yourself!");
+      return;
+    }
+
+    await FirebaseFirestore.instance.collection('friendRequests').add({
+      'from': FirebaseAuth.instance.currentUser?.uid,
+      'to': targetUid, // Now this will match what the recipient sees as their own UID
+      'status': 'pending',
+      'timestamp': FieldValue.serverTimestamp(),
+      'fromEmail': FirebaseAuth.instance.currentUser?.email,
+      'fromName': FirebaseAuth.instance.currentUser?.displayName ?? "User",
+    });
+
+    setState(() => _searchedUser = null);
+    _searchController.clear();
+    _showSnack("Request Sent!");
+  }
+
+  void _showSnack(String msg) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
 }

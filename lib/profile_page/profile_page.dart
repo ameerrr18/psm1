@@ -3,9 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:planova/profile_page/security_page.dart';
 import 'package:planova/profile_page/task_history_page.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../login_page/login_page.dart';
 import 'edit_profile_page.dart';
 import 'library_history_page.dart';
 import 'friends_page.dart';
+import 'dart:ui';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -56,9 +59,31 @@ class _ProfilePageState extends State<ProfilePage> {
   /// 🚪 FIXED LOGOUT LOGIC
   Future<void> _handleLogout() async {
     try {
+      final user = FirebaseAuth.instance.currentUser;
+
+      if (user != null) {
+        // 1. Record activity to Firestore BEFORE signing out
+        // This ensures the security log shows the logout accurately.
+        await FirebaseFirestore.instance.collection('user_activity').add({
+          'userId': user.uid,
+          'type': 'LOGOUT',
+          'timestamp': FieldValue.serverTimestamp(),
+        });
+      }
+
+      // 2. Clear local session data (Remember Me)
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('remember_me', false);
+
+      // 3. Perform the actual Firebase Sign Out
       await FirebaseAuth.instance.signOut();
+
+      // 4. Navigate back to Login
       if (mounted) {
-        Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (context) => const LoginPage()),
+              (route) => false,
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -286,16 +311,99 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   Widget _buildLogoutAction() {
-    return InkWell(
-      onTap: _handleLogout, // ✅ FIXED: Link to the actual function
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(Icons.logout_rounded, color: Colors.red, size: 20),
-          const SizedBox(width: 10),
-          const Text("Log Out", style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 16)),
-        ],
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+      child: ElevatedButton(
+        // ✅ FIX: The button now triggers the confirmation dialog, NOT the logout directly
+        onPressed: () => _showLogoutConfirmation(context),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.white,
+          foregroundColor: Colors.red,
+          elevation: 0,
+          padding: const EdgeInsets.symmetric(vertical: 18),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+            side: BorderSide(color: Colors.red.withOpacity(0.2)),
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: const [
+            Icon(Icons.logout_rounded, size: 22),
+            SizedBox(width: 12),
+            Text(
+              "Log Out",
+              style: TextStyle(fontWeight: FontWeight.w900, fontSize: 15),
+            ),
+          ],
+        ),
       ),
+    );
+  }
+
+  void _showLogoutConfirmation(BuildContext context) {
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (BuildContext context) {
+        return BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
+          child: AlertDialog(
+            backgroundColor: Colors.white,
+            surfaceTintColor: Colors.white, // Prevents Material 3 tinting
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+            contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 10),
+            title: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withOpacity(0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.logout_rounded, color: Colors.red, size: 20),
+                ),
+                const SizedBox(width: 12),
+                const Text(
+                  "Log Out",
+                  style: TextStyle(fontWeight: FontWeight.w900, color: Color(0xFF1A4789)),
+                ),
+              ],
+            ),
+            content: const Text(
+              "Are you sure you want to log out? You'll need to enter your credentials to get back in.",
+              style: TextStyle(color: Colors.grey, fontSize: 14, height: 1.5),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text(
+                  "Cancel",
+                  style: TextStyle(color: Colors.grey[600], fontWeight: FontWeight.w600),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: ElevatedButton(
+                  // ✅ This is where the actual logout logic happens
+                  onPressed: () {
+                    Navigator.pop(context);
+                    _handleLogout();
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: const Text("Log Out", style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

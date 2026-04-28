@@ -4,7 +4,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:path/path.dart' as p;
 
 class EditProfilePage extends StatefulWidget {
   const EditProfilePage({super.key});
@@ -15,7 +14,8 @@ class EditProfilePage extends StatefulWidget {
 
 class _EditProfilePageState extends State<EditProfilePage> {
   final Color primaryNavy = const Color(0xFF1A4789);
-  final Color lightBg = const Color(0xFFF8FAFC);
+  final Color accentBlue = const Color(0xFF3B82F6);
+  final Color bgLight = const Color(0xFFF1F5F9);
 
   final TextEditingController _usernameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
@@ -23,7 +23,6 @@ class _EditProfilePageState extends State<EditProfilePage> {
   String? _profileImageUrl;
   File? _imageFile;
   bool _isLoading = false;
-
   final user = FirebaseAuth.instance.currentUser;
 
   @override
@@ -32,12 +31,9 @@ class _EditProfilePageState extends State<EditProfilePage> {
     _loadUserData();
   }
 
-  /// 📥 FETCH DATA FROM DB
   Future<void> _loadUserData() async {
     if (user == null) return;
-
     try {
-      // 1. Search for the document where the 'uid' field matches
       final querySnapshot = await FirebaseFirestore.instance
           .collection('users')
           .where('uid', isEqualTo: user!.uid)
@@ -45,11 +41,8 @@ class _EditProfilePageState extends State<EditProfilePage> {
           .get();
 
       if (querySnapshot.docs.isNotEmpty) {
-        // 2. Get the data from the first matching document
         var data = querySnapshot.docs.first.data();
-
         setState(() {
-          // 3. Set the controller text so it shows in the UI
           _usernameController.text = data['username'] ?? "";
           _emailController.text = data['email'] ?? "";
           _profileImageUrl = data['profileImage'];
@@ -60,67 +53,38 @@ class _EditProfilePageState extends State<EditProfilePage> {
     }
   }
 
-  /// 📸 PICK IMAGE
   Future<void> _pickImage() async {
     final picker = ImagePicker();
-    final pickedFile = await picker.pickImage(
-        source: ImageSource.gallery,
-        imageQuality: 50
-    );
-
-    if (pickedFile != null) {
-      setState(() {
-        _imageFile = File(pickedFile.path);
-      });
-    }
+    final pickedFile = await picker.pickImage(source: ImageSource.gallery, imageQuality: 50);
+    if (pickedFile != null) setState(() => _imageFile = File(pickedFile.path));
   }
 
-  /// ☁️ UPLOAD TO STORAGE & SAVE TO DB
   Future<void> _saveProfile() async {
     if (user == null) return;
     setState(() => _isLoading = true);
-
     try {
       String? imageUrl = _profileImageUrl;
-
-      // 1. Upload new image if selected
       if (_imageFile != null) {
-        final ref = FirebaseStorage.instance
-            .ref()
-            .child('user_profiles')
-            .child('${user!.uid}.jpg');
-
+        final ref = FirebaseStorage.instance.ref().child('user_profiles').child('${user!.uid}.jpg');
         await ref.putFile(_imageFile!);
         imageUrl = await ref.getDownloadURL();
       }
 
-      // 2. Update the document in Firestore
       final querySnapshot = await FirebaseFirestore.instance
           .collection('users')
           .where('uid', isEqualTo: user!.uid)
           .get();
 
       if (querySnapshot.docs.isNotEmpty) {
-        String docId = querySnapshot.docs.first.id; // Get the auto-ID or custom ID
-
-        await FirebaseFirestore.instance.collection('users').doc(docId).update({
+        await FirebaseFirestore.instance.collection('users').doc(querySnapshot.docs.first.id).update({
           'username': _usernameController.text.trim(),
           'profileImage': imageUrl,
           'updatedAt': FieldValue.serverTimestamp(),
         });
-
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("Profile updated successfully")),
-          );
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Profile Updated"), behavior: SnackBarBehavior.floating));
           Navigator.pop(context);
         }
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Upload failed: $e")),
-        );
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -130,102 +94,117 @@ class _EditProfilePageState extends State<EditProfilePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: bgLight,
       appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
+        title: const Text("Edit Profile", style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
         centerTitle: true,
-        title: Text("Edit Profile",
-            style: TextStyle(color: primaryNavy, fontWeight: FontWeight.bold)),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        foregroundColor: primaryNavy,
         leading: IconButton(
-          icon: Icon(Icons.arrow_back_ios_new, color: primaryNavy, size: 20),
+          icon: const Icon(Icons.arrow_back_ios_new, size: 20),
           onPressed: () => Navigator.pop(context),
         ),
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.symmetric(horizontal: 24),
         child: Column(
           children: [
-            /// PROFILE PICTURE
-            Center(
-              child: Stack(
-                children: [
-                  CircleAvatar(
-                    radius: 65,
-                    backgroundColor: lightBg,
-                    backgroundImage: _imageFile != null
-                        ? FileImage(_imageFile!)
-                        : (_profileImageUrl != null
-                        ? NetworkImage(_profileImageUrl!)
-                        : null) as ImageProvider?,
-                    child: (_imageFile == null && _profileImageUrl == null)
-                        ? Icon(Icons.person, size: 60, color: primaryNavy.withOpacity(0.3))
-                        : null,
-                  ),
-                  Positioned(
-                    bottom: 0,
-                    right: 0,
-                    child: GestureDetector(
-                      onTap: _pickImage,
-                      child: Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(color: primaryNavy, shape: BoxShape.circle),
-                        child: const Icon(Icons.camera_alt, color: Colors.white, size: 18),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 40),
-
-            /// INPUT FIELDS
-            _buildField("USERNAME", _usernameController, Icons.person_outline),
             const SizedBox(height: 20),
-            _buildField("EMAIL", _emailController, Icons.email_outlined, enabled: false),
-
-            const SizedBox(height: 60),
-
-            SizedBox(
-              width: double.infinity,
-              height: 56,
-              child: ElevatedButton(
-                onPressed: _isLoading ? null : _saveProfile,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: primaryNavy,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                  elevation: 0,
-                ),
-                child: _isLoading
-                    ? const CircularProgressIndicator(color: Colors.white)
-                    : const Text("Save Profile",
-                    style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-              ),
-            ),
+            _buildImagePicker(),
+            const SizedBox(height: 40),
+            _buildModernField("Username", _usernameController, Icons.alternate_email_rounded),
+            const SizedBox(height: 20),
+            _buildModernField("Account Email", _emailController, Icons.email_rounded),
+            const SizedBox(height: 50),
+            _buildSaveButton(),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildField(String label, TextEditingController controller, IconData icon, {bool enabled = true}) {
+  Widget _buildImagePicker() {
+    return Center(
+      child: Stack(
+        alignment: Alignment.bottomRight,
+        children: [
+          Container(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white, width: 4),
+              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 15, offset: const Offset(0, 8))],
+            ),
+            child: CircleAvatar(
+              radius: 70,
+              backgroundColor: Colors.white,
+              backgroundImage: _imageFile != null
+                  ? FileImage(_imageFile!)
+                  : (_profileImageUrl != null ? NetworkImage(_profileImageUrl!) : null) as ImageProvider?,
+              child: (_imageFile == null && _profileImageUrl == null)
+                  ? Icon(Icons.person_rounded, size: 50, color: primaryNavy.withOpacity(0.2))
+                  : null,
+            ),
+          ),
+          GestureDetector(
+            onTap: _pickImage,
+            child: Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: accentBlue,
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 3),
+              ),
+              child: const Icon(Icons.camera_enhance_rounded, color: Colors.white, size: 20),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildModernField(String label, TextEditingController controller, IconData icon, {bool enabled = true}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: TextStyle(color: Colors.grey.shade500, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.1)),
-        const SizedBox(height: 8),
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 8),
+          child: Text(label, style: TextStyle(color: primaryNavy.withOpacity(0.6), fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
+        ),
         TextField(
           controller: controller,
           enabled: enabled,
-          style: TextStyle(color: primaryNavy, fontWeight: FontWeight.w600),
+          style: TextStyle(fontWeight: FontWeight.w600, color: enabled ? Colors.black87 : Colors.grey),
           decoration: InputDecoration(
-            prefixIcon: Icon(icon, color: primaryNavy.withOpacity(0.5)),
+            prefixIcon: Icon(icon, size: 20, color: enabled ? accentBlue : Colors.grey),
             filled: true,
-            fillColor: enabled ? lightBg : Colors.grey.shade100,
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
+            fillColor: Colors.white,
+            contentPadding: const EdgeInsets.symmetric(vertical: 18),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: BorderSide.none),
+            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: BorderSide(color: Colors.grey.withOpacity(0.1))),
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildSaveButton() {
+    return SizedBox(
+      width: double.infinity,
+      height: 60,
+      child: ElevatedButton(
+        onPressed: _isLoading ? null : _saveProfile,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: primaryNavy,
+          foregroundColor: Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          elevation: 8,
+          shadowColor: primaryNavy.withOpacity(0.4),
+        ),
+        child: _isLoading
+            ? const CircularProgressIndicator(color: Colors.white)
+            : const Text("Apply Changes", style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+      ),
     );
   }
 }

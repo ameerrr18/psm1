@@ -50,6 +50,7 @@ class _LoginPageState extends State<LoginPage> {
 
     try {
       String email = input;
+      // 1. Handle Username to Email conversion
       if (!input.contains('@')) {
         final querySnapshot = await FirebaseFirestore.instance
             .collection('users')
@@ -65,19 +66,49 @@ class _LoginPageState extends State<LoginPage> {
         email = querySnapshot.docs.first.get('email');
       }
 
-      await FirebaseAuth.instance.signInWithEmailAndPassword(
+      // 2. Firebase Authentication
+      UserCredential userCredential = await FirebaseAuth.instance.signInWithEmailAndPassword(
         email: email,
         password: password,
       );
 
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool('remember_me', _rememberMe);
+      if (userCredential.user != null) {
+        final String uid = userCredential.user!.uid;
+        final activityColl = FirebaseFirestore.instance.collection('user_activity');
 
-      if (mounted) _navigateToDashboard();
+        // 3. Record Login Activity
+        await activityColl.add({
+          'userId': uid,
+          'type': 'LOGIN',
+          'timestamp': FieldValue.serverTimestamp(),
+          'deviceName': 'Mobile Device',
+        });
+
+        // 4. Purge logs (Keep only 4 latest)
+        final logs = await activityColl
+            .where('userId', isEqualTo: uid)
+            .orderBy('timestamp', descending: true)
+            .get();
+
+        if (logs.docs.length > 4) {
+          for (var i = 4; i < logs.docs.length; i++) {
+            await activityColl.doc(logs.docs[i].id).delete();
+          }
+        }
+
+        if (mounted) {
+          // 5. Save "Remember Me" preference
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setBool('remember_me', _rememberMe);
+
+          // 6. Direct Navigation to Dashboard
+          _navigateToDashboard();
+        }
+      }
     } on FirebaseAuthException catch (e) {
       _showSnackBar(e.message ?? "Authentication failed");
     } catch (e) {
-      _showSnackBar("An error occurred. Please try again.");
+      _showSnackBar("An unexpected error occurred");
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -86,7 +117,7 @@ class _LoginPageState extends State<LoginPage> {
   void _navigateToDashboard() {
     Navigator.pushAndRemoveUntil(
       context,
-      MaterialPageRoute(builder: (context) => const MainWrapper()), // ✅ Entering through the nav bar
+      MaterialPageRoute(builder: (context) => const MainWrapper()),
           (route) => false,
     );
   }
@@ -107,15 +138,14 @@ class _LoginPageState extends State<LoginPage> {
       onTap: () => FocusScope.of(context).unfocus(),
       child: Scaffold(
         backgroundColor: primaryNavy,
-        resizeToAvoidBottomInset: false, // Handle inset manually for smoother UI
+        resizeToAvoidBottomInset: false,
         body: Stack(
           children: [
             _buildBackgroundDecoration(),
             SafeArea(
               child: CustomScrollView(
-                physics: const ClampingScrollPhysics(), // Best for preventing gaps on small screens
+                physics: const ClampingScrollPhysics(),
                 slivers: [
-                  // --- Header Section ---
                   SliverToBoxAdapter(
                     child: Column(
                       children: [
@@ -132,17 +162,14 @@ class _LoginPageState extends State<LoginPage> {
                       ],
                     ),
                   ),
-
-                  // --- White Card Section ---
                   SliverFillRemaining(
-                    hasScrollBody: false, // Forces card to stretch to bottom
+                    hasScrollBody: false,
                     child: Container(
                       width: double.infinity,
                       padding: EdgeInsets.only(
                         left: 30,
                         right: 30,
                         top: 40,
-                        // Dynamically adjusts to push button above keyboard
                         bottom: isKeyboardOpen ? keyboardHeight + 30 : 40,
                       ),
                       decoration: const BoxDecoration(
@@ -182,8 +209,6 @@ class _LoginPageState extends State<LoginPage> {
                           _isLoading
                               ? const CircularProgressIndicator(color: primaryNavy)
                               : _buildActionButton("Login", primaryNavy, _handleLogin),
-
-                          // Spacer ensures white background fills all remaining space
                           const Spacer(),
                         ],
                       ),

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:intl/intl.dart';
 
 class TaskHistoryPage extends StatefulWidget {
   const TaskHistoryPage({super.key});
@@ -13,9 +12,17 @@ class TaskHistoryPage extends StatefulWidget {
 class _TaskHistoryPageState extends State<TaskHistoryPage> {
   final String currentUserId = FirebaseAuth.instance.currentUser?.uid ?? "";
   final Color primaryNavy = const Color(0xFF1A4789);
+  final Color accentBlue = const Color(0xFF3B82F6);
+  final Color bgLight = const Color(0xFFF1F5F9);
 
   Set<String> selectedTaskIds = {};
   bool isSelectionMode = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _cleanOldTasks();
+  }
 
   // --- LOGIC: Toggle Selection ---
   void _toggleSelection(String docId) {
@@ -96,154 +103,242 @@ class _TaskHistoryPageState extends State<TaskHistoryPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        leading: isSelectionMode
-            ? IconButton(icon: const Icon(Icons.close, color: Colors.grey), onPressed: _exitSelectionMode)
-            : IconButton(
-          icon: Icon(Icons.arrow_back_ios_new, color: primaryNavy, size: 20),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: Text(
-          isSelectionMode ? "${selectedTaskIds.length} Selected" : "Trash Recovery",
-          style: TextStyle(color: primaryNavy, fontWeight: FontWeight.bold),
-        ),
-        actions: [
-          if (isSelectionMode) ...[
-            // 🔥 Select All Button
-            StreamBuilder<QuerySnapshot>(
-              // Update this specific stream in your actions:
-              stream: FirebaseFirestore.instance
-                  .collection('tasks')
-                  .where('userId', isEqualTo: currentUserId)
-                  .where('isDeleted', isEqualTo: true)
-                  .where('expireAt', isGreaterThan: Timestamp.now())
-                  .snapshots(),
-              builder: (context, snapshot) {
-                final allIds = snapshot.data?.docs.map((d) => d.id).toList() ?? [];
-                bool isAllSelected = selectedTaskIds.length == allIds.length && allIds.isNotEmpty;
-
-                return IconButton(
-                  icon: Icon(isAllSelected ? Icons.deselect : Icons.select_all, color: primaryNavy),
-                  onPressed: () {
-                    setState(() => isAllSelected ? selectedTaskIds.clear() : selectedTaskIds = allIds.toSet());
-                  },
-                );
-              },
-            ),
-            IconButton(
-              icon: const Icon(Icons.restart_alt, color: Colors.green),
-              onPressed: selectedTaskIds.isEmpty ? null : _handleBulkRestore,
-            ),
-            IconButton(
-              icon: const Icon(Icons.delete_forever, color: Colors.redAccent),
-              onPressed: selectedTaskIds.isEmpty ? null : _handleBulkPermanentDelete,
-            ),
-          ] else
-            IconButton(
-              icon: Icon(Icons.checklist_rtl_rounded, color: primaryNavy),
-              onPressed: () => setState(() => isSelectionMode = true),
-            ),
+      backgroundColor: bgLight,
+      body: CustomScrollView(
+        slivers: [
+          _buildModernAppBar(),
+          _buildTrashStatusHeader(),
+          _buildTaskList(),
         ],
       ),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance
-            .collection('tasks')
-            .where('userId', isEqualTo: currentUserId)
-            .where('isDeleted', isEqualTo: true)
-        // 🔥 ONLY show tasks that have NOT expired yet
-            .where('expireAt', isGreaterThan: Timestamp.now())
-            .orderBy('expireAt', descending: false) // Shows those about to expire first
-            .snapshots(),
-        builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            // Note: Chaining 'where' with 'orderBy' usually requires a Firestore Index.
-            // Check your debug console for the link to create it!
-            return Center(child: Text("Error: ${snapshot.error}"));
-          }
+      bottomNavigationBar: isSelectionMode ? _buildBottomActionBar() : null,
+    );
+  }
 
-          if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+  Widget _buildModernAppBar() {
+    return SliverAppBar(
+      pinned: true,
+      backgroundColor: Colors.white,
+      elevation: 0,
+      centerTitle: true,
+      leading: isSelectionMode
+          ? IconButton(icon: const Icon(Icons.close, color: Colors.grey), onPressed: _exitSelectionMode)
+          : IconButton(
+        icon: Icon(Icons.arrow_back_ios_new, color: primaryNavy, size: 20),
+        onPressed: () => Navigator.pop(context),
+      ),
+      title: Text(
+        isSelectionMode ? "${selectedTaskIds.length} Selected" : "Trash Recovery",
+        style: TextStyle(color: primaryNavy, fontWeight: FontWeight.bold, fontSize: 18),
+      ),
+      actions: [
+        if (!isSelectionMode)
+          IconButton(
+            icon: Icon(Icons.checklist_rtl_rounded, color: primaryNavy),
+            onPressed: () => setState(() => isSelectionMode = true),
+          )
+        else
+          _buildSelectAllButton(),
+      ],
+    );
+  }
 
-          final docs = snapshot.data!.docs;
-          if (docs.isEmpty) return const Center(child: Text("Trash is empty"));
+  Widget _buildSelectAllButton() {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('tasks')
+          .where('userId', isEqualTo: currentUserId)
+          .where('isDeleted', isEqualTo: true)
+          .where('expireAt', isGreaterThan: Timestamp.now())
+          .snapshots(),
+      builder: (context, snapshot) {
+        final allIds = snapshot.data?.docs.map((d) => d.id).toList() ?? [];
+        bool isAllSelected = selectedTaskIds.length == allIds.length && allIds.isNotEmpty;
+        return IconButton(
+          icon: Icon(isAllSelected ? Icons.deselect : Icons.select_all, color: primaryNavy),
+          onPressed: () {
+            setState(() => isAllSelected ? selectedTaskIds.clear() : selectedTaskIds = allIds.toSet());
+          },
+        );
+      },
+    );
+  }
 
-          return ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: docs.length,
-            itemBuilder: (context, index) {
-              final data = docs[index].data() as Map<String, dynamic>;
-              final String docId = docs[index].id;
-              final bool isSelected = selectedTaskIds.contains(docId);
-
-              // Calculate the days remaining for the UI
-              int daysLeft = _getDaysRemaining(data['expireAt'] as Timestamp?);
-
-              return _buildHistoryCard(data, docId, isSelected, daysLeft);
-            },
-          );
-        },
+  Widget _buildTrashStatusHeader() {
+    return SliverToBoxAdapter(
+      child: Container(
+        margin: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(colors: [primaryNavy, accentBlue]),
+          borderRadius: BorderRadius.circular(24),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.auto_delete_outlined, color: Colors.white70, size: 30),
+            const SizedBox(width: 15),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: const [
+                  Text("Automatic Cleanup", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                  Text("Tasks stay here for 30 days before permanent deletion.",
+                      style: TextStyle(color: Colors.white70, fontSize: 11)),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildHistoryCard(Map<String, dynamic> data, String docId, bool isSelected, int daysLeft) {
+  Widget _buildTaskList() {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('tasks')
+          .where('userId', isEqualTo: currentUserId)
+          .where('isDeleted', isEqualTo: true)
+          .where('expireAt', isGreaterThan: Timestamp.now())
+          .orderBy('expireAt', descending: false)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) return const SliverFillRemaining(child: Center(child: CircularProgressIndicator()));
+        final docs = snapshot.data!.docs;
+        if (docs.isEmpty) return const SliverFillRemaining(child: Center(child: Text("Trash is empty")));
+
+        return SliverPadding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          sliver: SliverList(
+            delegate: SliverChildBuilderDelegate(
+                  (context, index) {
+                final data = docs[index].data() as Map<String, dynamic>;
+                final String docId = docs[index].id;
+                final bool isSelected = selectedTaskIds.contains(docId);
+                int daysLeft = _getDaysRemaining(data['expireAt'] as Timestamp?);
+
+                return _buildModernHistoryCard(data, docId, isSelected, daysLeft);
+              },
+              childCount: docs.length,
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildModernHistoryCard(Map<String, dynamic> data, String docId, bool isSelected, int daysLeft) {
+    bool isUrgent = daysLeft < 7;
+
     return GestureDetector(
       onLongPress: () => _toggleSelection(docId),
       onTap: () => isSelectionMode ? _toggleSelection(docId) : null,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        margin: const EdgeInsets.only(bottom: 12),
+        duration: const Duration(milliseconds: 250),
+        margin: const EdgeInsets.only(bottom: 15),
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: isSelected ? primaryNavy.withOpacity(0.05) : Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: isSelected ? primaryNavy : Colors.transparent, width: 2),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 8, offset: const Offset(0, 4))],
+          color: isSelected ? Colors.white : Colors.white.withOpacity(0.9),
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(color: isSelected ? accentBlue : Colors.white, width: 2),
+          boxShadow: [
+            BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10, offset: const Offset(0, 4)),
+          ],
         ),
         child: Row(
           children: [
             if (isSelectionMode)
-              Padding(
-                padding: const EdgeInsets.only(right: 15),
-                child: Icon(isSelected ? Icons.check_circle : Icons.radio_button_unchecked, color: isSelected ? primaryNavy : Colors.grey),
-              ),
+              Icon(isSelected ? Icons.check_circle_rounded : Icons.radio_button_unchecked,
+                  color: isSelected ? accentBlue : Colors.grey[300]),
+            if (isSelectionMode) const SizedBox(width: 15),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(data['taskName'] ?? "Unnamed Task", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      Icon(Icons.timer_outlined, size: 14, color: daysLeft < 7 ? Colors.red : Colors.grey),
-                      const SizedBox(width: 4),
-                      Text(
-                        "$daysLeft days until deleted",
-                        style: TextStyle(color: daysLeft < 7 ? Colors.red : Colors.grey[600], fontSize: 12),
-                      ),
-                    ],
+                  Text(data['taskName'] ?? "Unnamed Task",
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: primaryNavy)),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: (isUrgent ? Colors.red : Colors.orange).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.schedule_rounded, size: 12, color: isUrgent ? Colors.red : Colors.orange),
+                        const SizedBox(width: 4),
+                        Text("$daysLeft days left",
+                            style: TextStyle(color: isUrgent ? Colors.red : Colors.orange, fontSize: 11, fontWeight: FontWeight.bold)),
+                      ],
+                    ),
                   ),
                 ],
               ),
             ),
-            if (!isSelectionMode) ...[
-              IconButton(
-                icon: const Icon(Icons.history, color: Colors.green),
-                onPressed: () {
-                  setState(() => selectedTaskIds = {docId});
-                  _handleBulkRestore();
-                },
+            if (!isSelectionMode) _buildQuickActions(docId),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildQuickActions(String docId) {
+    return Row(
+      children: [
+        _circleIconButton(Icons.settings_backup_restore_rounded, Colors.green, () {
+          selectedTaskIds = {docId};
+          _handleBulkRestore();
+        }),
+        const SizedBox(width: 8),
+        _circleIconButton(Icons.delete_forever_rounded, Colors.redAccent, () {
+          selectedTaskIds = {docId};
+          _handleBulkPermanentDelete();
+        }),
+      ],
+    );
+  }
+
+  Widget _circleIconButton(IconData icon, Color color, VoidCallback onTap) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
+        child: Icon(icon, color: color, size: 20),
+      ),
+    );
+  }
+
+  Widget _buildBottomActionBar() {
+    return SafeArea(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 10)],
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: ElevatedButton.icon(
+                icon: const Icon(Icons.restore),
+                label: const Text("Restore"),
+                onPressed: selectedTaskIds.isEmpty ? null : _handleBulkRestore,
+                style: ElevatedButton.styleFrom(foregroundColor: Colors.white ,iconColor: Colors.white ,backgroundColor: Colors.green, shape: StadiumBorder()),
               ),
-              IconButton(
-                icon: const Icon(Icons.delete_forever, color: Colors.redAccent),
-                onPressed: () {
-                  setState(() => selectedTaskIds = {docId});
-                  _handleBulkPermanentDelete();
-                },
+            ),
+            const SizedBox(width: 15),
+            Expanded(
+              child: ElevatedButton.icon(
+                icon: const Icon(Icons.delete_forever),
+                label: const Text("Delete"),
+                onPressed: selectedTaskIds.isEmpty ? null : _handleBulkPermanentDelete,
+                style: ElevatedButton.styleFrom(foregroundColor: Colors.white ,iconColor: Colors.white, backgroundColor: Colors.redAccent, shape: StadiumBorder()),
               ),
-            ]
+            ),
           ],
         ),
       ),
@@ -286,11 +381,4 @@ class _TaskHistoryPageState extends State<TaskHistoryPage> {
       print("Cleaned up ${expiredTasks.docs.length} old tasks.");
     }
   }
-
-  @override
-  void initState() {
-    super.initState();
-    _cleanOldTasks();
-  }
-
 }
