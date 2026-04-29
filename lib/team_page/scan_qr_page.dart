@@ -62,20 +62,35 @@ class _ScanQrPageState extends State<ScanQrPage> {
 
   // 🔥 DIRECT JOIN LOGIC (No Admin Approval Needed)
   Future<void> _performAutoJoin(DocumentReference ref, String name) async {
-    final String currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final user = FirebaseAuth.instance.currentUser;
+    final String currentUid = user?.uid ?? '';
 
     try {
-      await ref.update({
-        'members': FieldValue.arrayUnion([currentUid]),
-        'updatedAt': FieldValue.serverTimestamp(),
+      // 1. Create the request in the sub-collection (Matches your security rules)
+      await ref.collection('joinRequests').doc(currentUid).set({
+        'uid': currentUid,
+        'name': user?.displayName ?? "New User",
+        'email': user?.email,
+        'status': 'pending',
+        'workspaceName': name,
+        'timestamp': FieldValue.serverTimestamp(),
       });
 
       if (mounted) {
-        Navigator.pop(context); // Close confirm dialog
-        _showSimpleDialog("Welcome!", "You have successfully joined $name.");
+        // 2. Close the Confirmation Dialog
+        Navigator.pop(context);
+
+        // 3. Show success snackbar on the Team Page instead of a blocking Dialog
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text("Request sent for $name!"))
+        );
+
+        // 4. 🔥 GO BACK TO team_page.dart
+        // This pops the ScanQrPage and returns to the previous screen
+        Navigator.pop(context);
       }
     } catch (e) {
-      _showSimpleDialog("Join Failed", "Could not join workspace: $e");
+      _showSimpleDialog("Request Failed", "Could not send join request: $e");
     }
   }
 

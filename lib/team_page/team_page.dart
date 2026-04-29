@@ -55,12 +55,14 @@ class _TeamPageState extends State<TeamPage> {
         return;
       }
 
-      var existingRequest = await workspaceDoc.reference
+      // NEW CODE: Uses a query which aligns better with 'list' permissions
+      var requestQuery = await workspaceDoc.reference
           .collection('joinRequests')
-          .doc(currentUid)
+          .where('uid', isEqualTo: currentUid)
+          .limit(1)
           .get();
 
-      if (existingRequest.exists) {
+      if (requestQuery.docs.isNotEmpty) {
         _showSnack("Request already pending approval.");
         return;
       }
