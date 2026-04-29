@@ -274,24 +274,65 @@ class _SecurityPageState extends State<SecurityPage> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text("Delete Permanently?", style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
-        content: const Text("All data will be erased forever. This action is irreversible."),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.red),
+            SizedBox(width: 10),
+            Text("Delete Account", style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: const Text(
+          "This will permanently erase your profile and account data. This action cannot be undone.",
+          style: TextStyle(height: 1.5),
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancel")),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text("Cancel", style: TextStyle(color: Colors.grey[600])),
+          ),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              elevation: 0,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
             onPressed: () async {
               try {
-                String uid = _auth.currentUser!.uid;
-                await FirebaseFirestore.instance.collection('users').doc(uid).delete();
-                await _auth.currentUser!.delete();
-                if (mounted) Navigator.of(context).popUntil((route) => route.isFirst);
+                final currentUser = FirebaseAuth.instance.currentUser;
+                if (currentUser == null) return;
+
+                String authUid = currentUser.uid;
+
+                // 1. Find the document in the 'users' collection where the field 'uid' matches
+                final userQuery = await FirebaseFirestore.instance
+                    .collection('users')
+                    .where('uid', isEqualTo: authUid)
+                    .get();
+
+                // 2. Delete the Firestore document(s) found
+                if (userQuery.docs.isNotEmpty) {
+                  for (var doc in userQuery.docs) {
+                    await doc.reference.delete();
+                  }
+                }
+
+                // 3. Delete the Auth User
+                await currentUser.delete();
+
+                // 4. Redirect to Login Page and clear navigation history
+                if (mounted) {
+                  Navigator.of(context).pushNamedAndRemoveUntil(
+                    '/login', // Replace with your actual login route name
+                        (route) => false,
+                  );
+                }
               } catch (e) {
-                _showSnackBar("Please re-login to delete your account.");
+                // Firebase requires a recent login for sensitive actions like account deletion
+                _showSnackBar("Please log out and log back in to verify your identity before deleting.");
               }
             },
-            child: const Text("Delete", style: TextStyle(color: Colors.white)),
+            child: const Text("Delete Forever", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
           ),
         ],
       ),

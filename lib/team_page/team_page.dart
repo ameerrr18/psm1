@@ -178,7 +178,30 @@ class _TeamPageState extends State<TeamPage> {
                   if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
 
                   var workspaces = snapshot.data ?? [];
-                  if (workspaces.isEmpty) return const Center(child: Text("No workspaces found."));
+                  if (workspaces.isEmpty) {
+                    return Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.folder_open_outlined, size: 60, color: Colors.grey[300]),
+                          const SizedBox(height: 16),
+                          Text(
+                            "No workspaces found",
+                            style: TextStyle(
+                              fontSize: 18,
+                              color: Colors.grey[500],
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            "Create a new workspace to get started!",
+                            style: TextStyle(color: Colors.grey[400]),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
 
                   return ListView.builder(
                     padding: const EdgeInsets.fromLTRB(20, 30, 20, 100),

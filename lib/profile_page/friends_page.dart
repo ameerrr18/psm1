@@ -99,6 +99,7 @@ class _FriendsPageState extends State<FriendsPage> with SingleTickerProviderStat
 
     // Check if this person is already in our friends list
     bool isAlreadyFriend = _currentUserFriends.contains(_searchedUser!['uid']);
+    String? imageUrl = _searchedUser!['profileImage'];
 
     return Container(
       margin: const EdgeInsets.only(top: 15),
@@ -111,8 +112,15 @@ class _FriendsPageState extends State<FriendsPage> with SingleTickerProviderStat
       child: Row(
         children: [
           CircleAvatar(
+            radius: 22,
             backgroundColor: Colors.white.withOpacity(0.2),
-            child: Text((_searchedUser!['username'] ?? "U")[0].toUpperCase(), style: const TextStyle(color: Colors.white)),
+            backgroundImage: imageUrl != null && imageUrl.isNotEmpty
+                ? NetworkImage(imageUrl)
+                : null,
+            child: imageUrl == null || imageUrl.isEmpty
+                ? Text((_searchedUser!['username'] ?? "U")[0].toUpperCase(),
+                style: const TextStyle(color: Colors.white))
+                : null,
           ),
           const SizedBox(width: 15),
           Expanded(
@@ -173,6 +181,7 @@ class _FriendsPageState extends State<FriendsPage> with SingleTickerProviderStat
                 if (!fSnap.hasData || fSnap.data!.docs.isEmpty) return const SizedBox.shrink();
                 var fData = fSnap.data!.docs.first.data() as Map;
                 String targetUid = fData['uid'];
+                String? friendImageUrl = fData['profileImage'];
 
                 return Container(
                   margin: const EdgeInsets.only(bottom: 12),
@@ -182,7 +191,12 @@ class _FriendsPageState extends State<FriendsPage> with SingleTickerProviderStat
                     contentPadding: EdgeInsets.zero,
                     leading: CircleAvatar(
                       backgroundColor: accentBlue.withOpacity(0.1),
-                      child: Text(fData['username'][0].toUpperCase(), style: TextStyle(color: accentBlue)),
+                      backgroundImage: friendImageUrl != null && friendImageUrl.isNotEmpty
+                          ? NetworkImage(friendImageUrl)
+                          : null,
+                      child: friendImageUrl == null || friendImageUrl.isEmpty
+                          ? Text(fData['username'][0].toUpperCase(), style: TextStyle(color: accentBlue))
+                          : null,
                     ),
                     title: Text(fData['username'], style: const TextStyle(fontWeight: FontWeight.bold)),
                     subtitle: Text(fData['email'], style: const TextStyle(fontSize: 12)),
@@ -237,8 +251,17 @@ class _FriendsPageState extends State<FriendsPage> with SingleTickerProviderStat
           itemCount: docs.length,
           itemBuilder: (context, index) {
             var data = docs[index].data() as Map<String, dynamic>;
+            String? requesterImageUrl = data['fromImageUrl'];
             return ListTile(
-              leading: const CircleAvatar(child: Icon(Icons.person_outline)),
+              leading: CircleAvatar(
+                backgroundColor: Colors.grey[200],
+                backgroundImage: requesterImageUrl != null && requesterImageUrl.isNotEmpty
+                    ? NetworkImage(requesterImageUrl)
+                    : null,
+                child: requesterImageUrl == null || requesterImageUrl.isEmpty
+                    ? const Icon(Icons.person_outline)
+                    : null,
+              ),
               title: Text(data['fromName'] ?? "Unknown"),
               subtitle: Text(data['fromEmail'] ?? ""),
               trailing: Row(
@@ -356,6 +379,9 @@ class _FriendsPageState extends State<FriendsPage> with SingleTickerProviderStat
     if (_searchedUser == null) return;
 
     final String currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final myData = await FirebaseFirestore.instance.collection('users')
+        .where('uid', isEqualTo: currentUid).limit(1).get();
+    String? myImageUrl = myData.docs.first.data()['profileImage'];
 
     // CRITICAL FIX: Use the UID we found during the search
     final String targetUid = _searchedUser!['uid'];
@@ -372,6 +398,7 @@ class _FriendsPageState extends State<FriendsPage> with SingleTickerProviderStat
       'timestamp': FieldValue.serverTimestamp(),
       'fromEmail': FirebaseAuth.instance.currentUser?.email,
       'fromName': FirebaseAuth.instance.currentUser?.displayName ?? "User",
+      'fromImageUrl': myImageUrl,
     });
 
     setState(() => _searchedUser = null);

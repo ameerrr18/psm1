@@ -289,9 +289,18 @@ class _LibraryPageState extends State<LibraryPage> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.description_outlined, size: 100, color: Color(0xFFD1E3F8)),
-            const SizedBox(height: 30),
-            Text("Library is Empty", style: TextStyle(color: primaryNavy, fontSize: 20, fontWeight: FontWeight.w900)),
+            Icon(
+              Icons.description_outlined,
+              size: 60,
+              color: Colors.grey[300],
+            ),
+            const SizedBox(height: 16),
+            Text("Library is Empty", style: TextStyle(fontSize: 18, color: Colors.grey[500], fontWeight: FontWeight.w500)),
+            const SizedBox(height: 8),
+            Text(
+              "No documents or files found here",
+              style: TextStyle(color: Colors.grey[400]),
+            ),
           ],
         ),
       ),

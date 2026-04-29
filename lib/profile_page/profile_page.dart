@@ -62,9 +62,10 @@ class _ProfilePageState extends State<ProfilePage> {
       final user = FirebaseAuth.instance.currentUser;
 
       if (user != null) {
-        // 1. Record activity to Firestore BEFORE signing out
-        // This ensures the security log shows the logout accurately.
-        await FirebaseFirestore.instance.collection('user_activity').add({
+        // 1. Perform Firestore updates FIRST while user is still authed
+        await FirebaseFirestore.instance
+            .collection('user_activity')
+            .add({
           'userId': user.uid,
           'type': 'LOGOUT',
           'timestamp': FieldValue.serverTimestamp(),

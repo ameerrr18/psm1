@@ -205,7 +205,42 @@ class _TaskHistoryPageState extends State<TaskHistoryPage> {
       builder: (context, snapshot) {
         if (!snapshot.hasData) return const SliverFillRemaining(child: Center(child: CircularProgressIndicator()));
         final docs = snapshot.data!.docs;
-        if (docs.isEmpty) return const SliverFillRemaining(child: Center(child: Text("Trash is empty")));
+        if (docs.isEmpty) {
+          return SliverFillRemaining(
+            hasScrollBody: false,
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  // Using a trash-specific icon but keeping the grey theme and 60px size
+                  Icon(
+                    Icons.delete_outline_rounded,
+                    size: 60,
+                    color: Colors.grey[300],
+                  ),
+                  const SizedBox(height: 16),
+                  // Title following the Task theme (18px, grey[500], w500)
+                  Text(
+                    "Trash is empty",
+                    style: TextStyle(
+                      fontSize: 18,
+                      color: Colors.grey[500],
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  // Subtitle following the Task theme (grey[400])
+                  Text(
+                    "Items you delete will appear here.",
+                    style: TextStyle(
+                      color: Colors.grey[400],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
 
         return SliverPadding(
           padding: const EdgeInsets.symmetric(horizontal: 20),

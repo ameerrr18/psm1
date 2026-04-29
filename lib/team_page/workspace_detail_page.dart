@@ -19,16 +19,36 @@ class WorkspaceDetailPage extends StatelessWidget {
 
     return StreamBuilder<DocumentSnapshot>(
       stream: FirebaseFirestore.instance.collection('workspaces').doc(workspaceId).snapshots(),
-      builder: (context, snapshot) {
-        if (!snapshot.hasData || !snapshot.data!.exists) {
-          return const Scaffold(body: Center(child: CircularProgressIndicator()));
-        }
+        builder: (context, snapshot) {
+          // 1. Handle Loading State
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Scaffold(body: Center(child: CircularProgressIndicator()));
+          }
 
-        var data = snapshot.data!.data() as Map<String, dynamic>;
-        bool isAdmin = data['adminId'] == currentUid;
-        bool isActive = data['status'] == 'active';
-        List members = data['members'] ?? [];
-        String joinCode = data['joinCode'] ?? "N/A";
+          // 2. Handle Deletion/Missing Document
+          if (!snapshot.hasData || !snapshot.data!.exists) {
+            Future.microtask(() {
+              if (context.mounted && Navigator.canPop(context)) {
+                Navigator.of(context).popUntil((route) => route.isFirst);
+              }
+            });
+            return const Scaffold(body: Center(child: CircularProgressIndicator()));
+          }
+
+          // 3. SAFE ACCESS: Now we can safely use data!
+          var docSnapshot = snapshot.data!;
+          var data = docSnapshot.data() as Map<String, dynamic>?;
+
+          // Extra safety check in case data is null for some reason
+          if (data == null) {
+            return const Scaffold(body: Center(child: Text("Error: Workspace data is empty")));
+          }
+
+          // Now extract your variables as usual
+          bool isAdmin = data['adminId'] == currentUid;
+          bool isActive = data['status'] == 'active';
+          List members = data['members'] ?? [];
+          String joinCode = data['joinCode'] ?? "N/A";
 
         return Scaffold(
           backgroundColor: bgBlue,
@@ -317,9 +337,17 @@ class WorkspaceDetailPage extends StatelessWidget {
 
   Widget _buildSliverTaskList(String id, bool isActive) {
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance.collection('workspaces').doc(id).collection('tasks').where('isDeleted', isEqualTo: false).snapshots(),
+      stream: FirebaseFirestore.instance
+          .collection('workspaces')
+          .doc(id)
+          .collection('tasks')
+          .where('isDeleted', isEqualTo: false)
+          .snapshots(),
       builder: (context, snap) {
-        if (!snap.hasData) return const SliverToBoxAdapter(child: SizedBox());
+        // ✅ Always add this check for sub-collections too!
+        if (!snap.hasData || snap.data == null) {
+          return const SliverToBoxAdapter(child: Center(child: CircularProgressIndicator()));
+        }
         return SliverPadding(
           padding: const EdgeInsets.fromLTRB(20, 0, 20, 100),
           sliver: SliverList(
@@ -552,9 +580,38 @@ class WorkspaceDetailPage extends StatelessWidget {
   void _confirmDelete(BuildContext context, String id) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog( // Use a different name for dialog context
         title: const Text("Delete Workspace?"),
-        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancel")), TextButton(onPressed: () { FirebaseFirestore.instance.collection('workspaces').doc(id).update({'status': 'deleted', 'isDeleted': true}); Navigator.pop(context); Navigator.pop(context); }, child: const Text("Delete", style: TextStyle(color: Colors.red)))],
+        content: const Text("This action is permanent."),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text("Cancel")
+          ),
+          TextButton(
+              onPressed: () async {
+                // 1. Close the dialog immediately
+                Navigator.pop(dialogContext);
+
+                try {
+                  // 2. Perform the deletion
+                  await FirebaseFirestore.instance.collection('workspaces').doc(id).delete();
+
+                  // NOTE: We don't need to Navigator.pop(context) here anymore!
+                  // The StreamBuilder at the top will see the document is gone
+                  // and redirect the user automatically.
+
+                } catch (e) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text("Error: $e"))
+                    );
+                  }
+                }
+              },
+              child: const Text("Delete", style: TextStyle(color: Colors.red))
+          ),
+        ],
       ),
     );
   }

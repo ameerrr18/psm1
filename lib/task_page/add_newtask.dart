@@ -86,6 +86,8 @@ class _AddNewTaskState extends State<AddNewTask> {
       String customId = "$cleanName-$timestamp";
       String taskName = _taskNameController.text.toUpperCase();
 
+      WriteBatch batch = FirebaseFirestore.instance.batch();
+
       // --- 1. CREATE THE TASK ---
       await FirebaseFirestore.instance.collection('tasks').doc(customId).set({
         'userId': user.uid,
@@ -112,6 +114,8 @@ class _AddNewTaskState extends State<AddNewTask> {
         'targetId': customId, // This links back to the task we just created
         'timestamp': FieldValue.serverTimestamp(), // Critical for 'orderBy'
       });
+
+      await batch.commit();
 
       if (mounted) Navigator.pop(context);
     } catch (e) {

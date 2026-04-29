@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:planova/main_wrapper.dart';
 import 'package:planova/utils/app_colors.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:ui';
 import 'signup_page.dart';
 import 'forgot_password_page.dart';
 
@@ -41,8 +42,9 @@ class _LoginPageState extends State<LoginPage> {
     String input = _userInputController.text.trim();
     String password = _passwordController.text.trim();
 
+    // Validate empty fields
     if (input.isEmpty || password.isEmpty) {
-      _showSnackBar("Please fill in all fields");
+      _showErrorDialog("Hold on!", "Please enter your email/username and password to continue.");
       return;
     }
 
@@ -50,7 +52,6 @@ class _LoginPageState extends State<LoginPage> {
 
     try {
       String email = input;
-      // 1. Handle Username to Email conversion
       if (!input.contains('@')) {
         final querySnapshot = await FirebaseFirestore.instance
             .collection('users')
@@ -59,14 +60,13 @@ class _LoginPageState extends State<LoginPage> {
             .get();
 
         if (querySnapshot.docs.isEmpty) {
-          _showSnackBar("Username not found");
+          _showErrorDialog("User Not Found", "The username '$input' doesn't exist. Please check your spelling or sign up.");
           setState(() => _isLoading = false);
           return;
         }
         email = querySnapshot.docs.first.get('email');
       }
 
-      // 2. Firebase Authentication
       UserCredential userCredential = await FirebaseAuth.instance.signInWithEmailAndPassword(
         email: email,
         password: password,
@@ -74,17 +74,16 @@ class _LoginPageState extends State<LoginPage> {
 
       if (userCredential.user != null) {
         final String uid = userCredential.user!.uid;
-        final activityColl = FirebaseFirestore.instance.collection('user_activity');
 
-        // 3. Record Login Activity
+        final activityColl = FirebaseFirestore.instance.collection(
+            'user_activity');
+
         await activityColl.add({
           'userId': uid,
           'type': 'LOGIN',
           'timestamp': FieldValue.serverTimestamp(),
           'deviceName': 'Mobile Device',
         });
-
-        // 4. Purge logs (Keep only 4 latest)
         final logs = await activityColl
             .where('userId', isEqualTo: uid)
             .orderBy('timestamp', descending: true)
@@ -95,23 +94,71 @@ class _LoginPageState extends State<LoginPage> {
             await activityColl.doc(logs.docs[i].id).delete();
           }
         }
-
         if (mounted) {
-          // 5. Save "Remember Me" preference
           final prefs = await SharedPreferences.getInstance();
           await prefs.setBool('remember_me', _rememberMe);
-
-          // 6. Direct Navigation to Dashboard
           _navigateToDashboard();
         }
       }
     } on FirebaseAuthException catch (e) {
-      _showSnackBar(e.message ?? "Authentication failed");
+      // Handling specific Firebase errors with Popups
+      if (e.code == 'wrong-password') {
+        _showErrorDialog("Incorrect Password", "The password you entered is incorrect. Please try again or reset it.");
+      } else if (e.code == 'user-not-found') {
+        _showErrorDialog("Account Not Found", "No account exists for this email. Would you like to sign up?");
+      } else if (e.code == 'invalid-email') {
+        _showErrorDialog("Invalid Email", "Please enter a valid email address format.");
+      } else if (e.code == 'user-disabled') {
+        _showErrorDialog("Account Disabled", "This account has been disabled. Please contact support.");
+      } else {
+        _showErrorDialog("Login Failed", e.message ?? "An error occurred during authentication.");
+      }
     } catch (e) {
-      _showSnackBar("An unexpected error occurred");
+      _showErrorDialog("System Error", "Something went wrong on our end. Please try again later.");
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  void _showErrorDialog(String title, String message) {
+    showDialog(
+      context: context,
+      builder: (context) => BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
+        child: AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+          backgroundColor: Colors.white,
+          title: Row(
+            children: [
+              const Icon(Icons.error_outline_rounded, color: Colors.red, size: 28),
+              const SizedBox(width: 12),
+              Text(
+                title,
+                style: const TextStyle(fontWeight: FontWeight.w900, color: Color(0xFF1A4789)),
+              ),
+            ],
+          ),
+          content: Text(
+            message,
+            style: const TextStyle(color: Colors.grey, fontSize: 14, height: 1.5),
+          ),
+          actions: [
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () => Navigator.pop(context),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF1A4789),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  elevation: 0,
+                ),
+                child: const Text("Got it", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _navigateToDashboard() {
