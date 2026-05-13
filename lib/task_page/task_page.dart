@@ -241,8 +241,8 @@ class _TaskPageState extends State<TaskPage> {
                 stream: FirebaseFirestore.instance
                     .collection('tasks')
                     .where('userId', isEqualTo: currentUserId)
-                    .orderBy('status', descending: true) // Sorts 'PENDING' vs 'DONE'
-                    .orderBy('createdAt', descending: true)
+                    .orderBy('status', descending: true)
+                    .orderBy('startDate', descending: false)
                     .snapshots(),
                 builder: (context, snapshot) {
                   if (snapshot.hasError) return Center(child: Text("Error: ${snapshot.error}"));
