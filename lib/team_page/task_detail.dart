@@ -12,7 +12,7 @@ class TaskDetailPage extends StatelessWidget {
   });
 
   final Color primaryNavy = const Color(0xFF1A4789);
-  final Color bgBlue = const Color(0xFFF4F7FA);
+  final Color bgBlue = const Color(0xFFF8FAFC); // Sweeter, cleaner modern background hue
 
   @override
   Widget build(BuildContext context) {
@@ -30,70 +30,99 @@ class TaskDetailPage extends StatelessWidget {
 
         var task = snapshot.data!.data() as Map<String, dynamic>;
         String priority = task['priority'] ?? 'MEDIUM';
-        bool isCompleted = task['status'] == 'completed';
+
+        // Match the structural 'DONE' state from your workspace checklist logic
+        bool isCompleted = task['status'] == 'DONE' || task['status'] == 'completed';
 
         return Scaffold(
           backgroundColor: Colors.white,
           appBar: AppBar(
             backgroundColor: Colors.white,
             elevation: 0,
+            scrolledUnderElevation: 0,
             leading: IconButton(
-              icon: const Icon(Icons.arrow_back, color: Colors.black87),
+              icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.black87, size: 20),
               onPressed: () => Navigator.pop(context),
             ),
-            actions: [
-              IconButton(
-                icon: const Icon(Icons.edit_outlined, color: Colors.black87),
-                onPressed: () => _showEditTaskSheet(context, task),
-              ),
-            ],
           ),
           body: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 25),
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _priorityBadge(priority),
-                const SizedBox(height: 12),
+                // Priority Tracker Row
+                _buildPriorityBadge(priority),
+                const SizedBox(height: 16),
+
+                // Task Title Text block
                 Text(
                   task['taskName'] ?? "Unnamed Task",
                   style: TextStyle(
-                    fontSize: 28,
+                    fontSize: 26,
                     fontWeight: FontWeight.bold,
                     color: primaryNavy,
+                    letterSpacing: -0.5,
                   ),
                 ),
-                const SizedBox(height: 30),
+                const SizedBox(height: 24),
 
-                // Details Grid
-                Row(
-                  children: [
-                    _detailItem(Icons.person_outline, "ASSIGNED TO", task['assigneeName'] ?? "Unassigned"),
-                    _detailItem(Icons.work_outline, "WORKSPACE", "Mobile App"),
-                  ],
-                ),
-                const SizedBox(height: 25),
-                Row(
-                  children: [
-                    _detailItem(Icons.calendar_today_outlined, "DUE DATE", task['endDate'] ?? "No Date"),
-                    _detailItem(Icons.timer_outlined, "EFFORT", "${task['effort'] ?? '0'} Hrs"),
-                  ],
+                // Premium Metadata Grid Card
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: bgBlue,
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(color: Colors.grey.shade100),
+                  ),
+                  child: Column(
+                    children: [
+                      Row(
+                        children: [
+                          _buildDetailItem(Icons.person_search_rounded, "ASSIGNED TO", task['assignedName'] ?? "Unassigned"),
+                          _buildDetailItem(Icons.grid_view_rounded, "TASK ID", task['taskId'] ?? taskId),
+                        ],
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        child: Divider(color: Colors.grey.shade200, height: 1),
+                      ),
+                      Row(
+                        children: [
+                          _buildDetailItem(Icons.calendar_month_rounded, "DUE DATE",
+                              task['endDate'] != null && task['endDate'].toString().contains('T')
+                                  ? task['endDate'].toString().split('T')[0]
+                                  : task['endDate'] ?? 'No Date'
+                          ),
+                          _buildDetailItem(Icons.hourglass_top_rounded, "EFFORT VALUE", "${task['effort'] ?? '0'} Hrs"),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
 
-                const SizedBox(height: 40),
+                const SizedBox(height: 32),
                 const Text(
                   "DESCRIPTION",
-                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey, letterSpacing: 1.2),
+                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey, letterSpacing: 1.5),
                 ),
-                const SizedBox(height: 10),
-                Text(
-                  task['description'] ?? "No description provided for this task.",
-                  style: TextStyle(fontSize: 15, color: Colors.blueGrey[700], height: 1.5),
+                const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade50,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Text(
+                    task['description'] ?? "No description provided for this task.",
+                    style: TextStyle(fontSize: 15, color: Colors.blueGrey[800], height: 1.6, fontWeight: FontWeight.w400),
+                  ),
                 ),
 
-                const SizedBox(height: 40),
-                // Task Completion Toggle
+                const SizedBox(height: 32),
+                // Task Live Completion Progress Overview Card
                 _buildStatusSection(isCompleted),
+                const SizedBox(height: 40),
               ],
             ),
           ),
@@ -103,36 +132,60 @@ class TaskDetailPage extends StatelessWidget {
     );
   }
 
-  Widget _priorityBadge(String p) {
+  Widget _buildPriorityBadge(String priority) {
+    Color labelColor;
+    Color containerColor;
+
+    switch (priority.toUpperCase()) {
+      case 'CRITICAL':
+      case 'HIGH':
+        labelColor = const Color(0xFFDC2626);
+        containerColor = const Color(0xFFFEE2E2);
+        break;
+      case 'MEDIUM':
+        labelColor = const Color(0xFFD97706);
+        containerColor = const Color(0xFFFEF3C7);
+        break;
+      default:
+        labelColor = const Color(0xFF4B5563);
+        containerColor = const Color(0xFFF3F4F6);
+    }
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: const Color(0xFFE0F7FA),
+        color: containerColor,
         borderRadius: BorderRadius.circular(10),
       ),
       child: Text(
-        p.toUpperCase(),
-        style: const TextStyle(color: Color(0xFF00ACC1), fontSize: 11, fontWeight: FontWeight.bold),
+        priority.toUpperCase(),
+        style: TextStyle(color: labelColor, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 0.5),
       ),
     );
   }
 
-  Widget _detailItem(IconData icon, String label, String value) {
+  Widget _buildDetailItem(IconData icon, String label, String value) {
     return Expanded(
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(color: bgBlue, borderRadius: BorderRadius.circular(10)),
-            child: Icon(icon, size: 18, color: primaryNavy),
-          ),
+          Icon(icon, size: 20, color: primaryNavy.withOpacity(0.6)),
           const SizedBox(width: 12),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(label, style: const TextStyle(fontSize: 10, color: Colors.grey, fontWeight: FontWeight.bold)),
-              Text(value, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
-            ],
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(label, style: const TextStyle(fontSize: 10, color: Colors.grey, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.black87),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                ),
+              ],
+            ),
           )
         ],
       ),
@@ -140,26 +193,34 @@ class TaskDetailPage extends StatelessWidget {
   }
 
   Widget _buildStatusSection(bool isCompleted) {
+    final Color stateAccentColor = isCompleted ? const Color(0xFF10B981) : const Color(0xFFF59E0B);
+
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: bgBlue,
+        color: stateAccentColor.withOpacity(0.06),
         borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: stateAccentColor.withOpacity(0.15)),
       ),
       child: Row(
         children: [
           Icon(
-            isCompleted ? Icons.check_circle : Icons.pending_actions,
-            color: isCompleted ? Colors.green : Colors.orange,
+            isCompleted ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
+            color: stateAccentColor,
+            size: 24,
           ),
-          const SizedBox(width: 15),
+          const SizedBox(width: 16),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text("PROGRESS STATUS", style: TextStyle(fontSize: 10, color: Colors.grey)),
               Text(
-                isCompleted ? "Task Completed" : "In Progress",
-                style: const TextStyle(fontWeight: FontWeight.bold),
+                  "PROGRESS STATUS",
+                  style: TextStyle(fontSize: 10, color: stateAccentColor.withOpacity(0.8), fontWeight: FontWeight.bold, letterSpacing: 0.5)
+              ),
+              const SizedBox(height: 2),
+              Text(
+                isCompleted ? "Task Completed Successfully" : "In Progress Tracking",
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: primaryNavy),
               ),
             ],
           ),
@@ -170,41 +231,47 @@ class TaskDetailPage extends StatelessWidget {
 
   Widget _buildBottomAction(BuildContext context, bool isCompleted) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(25, 10, 25, 30),
-      decoration: const BoxDecoration(color: Colors.white),
+      padding: const EdgeInsets.fromLTRB(24, 12, 24, 34),
+      decoration: BoxDecoration(
+          color: Colors.white,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.04),
+              blurRadius: 12,
+              offset: const Offset(0, -4),
+            )
+          ]
+      ),
       child: ElevatedButton(
         style: ElevatedButton.styleFrom(
-          backgroundColor: isCompleted ? Colors.grey : primaryNavy,
-          minimumSize: const Size(double.infinity, 55),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+          backgroundColor: isCompleted ? Colors.grey.shade200 : primaryNavy,
+          foregroundColor: isCompleted ? Colors.black87 : Colors.white,
+          minimumSize: const Size(double.infinity, 54),
+          elevation: 0,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         ),
         onPressed: () => _toggleTaskStatus(!isCompleted),
         child: Text(
-          isCompleted ? "REOPEN TASK" : "MARK AS COMPLETE",
-          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+          isCompleted ? "REOPEN TASK SUITE" : "MARK AS DONE",
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, letterSpacing: 0.5),
         ),
       ),
     );
   }
 
-  // --- LOGIC ---
+  // --- DATABASE TRANSACTION LOGIC ---
 
   Future<void> _toggleTaskStatus(bool complete) async {
+    // Toggles using the exact parameters used in the home feed tracker
     await FirebaseFirestore.instance
         .collection('workspaces')
         .doc(workspaceId)
         .collection('tasks')
         .doc(taskId)
         .update({
-      'status': complete ? 'completed' : 'in-progress',
+      'status': complete ? 'DONE' : 'PENDING',
       'updatedAt': FieldValue.serverTimestamp(),
     });
   }
 
-  void _showEditTaskSheet(BuildContext context, Map<String, dynamic> task) {
-    // You can implement an edit bottom sheet here later
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Edit feature coming soon!")),
-    );
-  }
 }

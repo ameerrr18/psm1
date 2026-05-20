@@ -3,6 +3,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/services.dart';
 import 'package:rxdart/rxdart.dart';
+import 'package:app_links/app_links.dart';
+import 'dart:async';
 import 'add_workspace_page.dart';
 import 'workspace_detail_page.dart';
 import 'scan_qr_page.dart';
@@ -29,6 +31,48 @@ class _TeamPageState extends State<TeamPage> {
   final Color primaryNavy = const Color(0xFF1A4789);
   final Color secondaryTeal = const Color(0xFF8DE1E1);
   final Color lightBg = const Color(0xFFF8FAFC);
+
+  late AppLinks _appLinks;
+  StreamSubscription<Uri>? _linkSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    initDeepLinks();
+  }
+
+  void initDeepLinks() {
+    _appLinks = AppLinks();
+
+    // Check if the app was opened from a terminated state via a deep link
+    _appLinks.getInitialLink().then((uri) {
+      if (uri != null) _handleIncomingLink(uri);
+    });
+
+    // Listen for deep links coming in while the app is running in background
+    _linkSubscription = _appLinks.uriLinkStream.listen((uri) {
+      _handleIncomingLink(uri);
+    });
+  }
+
+  void _handleIncomingLink(Uri uri) {
+    if (uri.path == '/join') {
+      final String? code = uri.queryParameters['code'];
+      if (code != null && mounted) {
+        // Push your Join processing or Scan layout view controller
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => ScanQrPage(initialCode: code)),
+        );
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _linkSubscription?.cancel();
+    super.dispose();
+  }
 
   void _showSnack(String m) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
 

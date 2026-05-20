@@ -1,8 +1,13 @@
+import 'dart:io';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:flutter/services.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:flutter/rendering.dart';
 import 'add_task.dart';
 import 'task_detail.dart';
 
@@ -13,42 +18,41 @@ class WorkspaceDetailPage extends StatelessWidget {
   final Color primaryNavy = const Color(0xFF1A4789);
   final Color bgBlue = const Color(0xFFF4F7FA);
 
+  // GlobalKey to capture the QR view image data context
+  static final GlobalKey _qrBoundaryKey = GlobalKey();
+
   @override
   Widget build(BuildContext context) {
     final String currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
 
     return StreamBuilder<DocumentSnapshot>(
       stream: FirebaseFirestore.instance.collection('workspaces').doc(workspaceId).snapshots(),
-        builder: (context, snapshot) {
-          // 1. Handle Loading State
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Scaffold(body: Center(child: CircularProgressIndicator()));
-          }
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(body: Center(child: CircularProgressIndicator()));
+        }
 
-          // 2. Handle Deletion/Missing Document
-          if (!snapshot.hasData || !snapshot.data!.exists) {
-            Future.microtask(() {
-              if (context.mounted && Navigator.canPop(context)) {
-                Navigator.of(context).popUntil((route) => route.isFirst);
-              }
-            });
-            return const Scaffold(body: Center(child: CircularProgressIndicator()));
-          }
+        if (!snapshot.hasData || !snapshot.data!.exists) {
+          Future.microtask(() {
+            if (context.mounted && Navigator.canPop(context)) {
+              Navigator.of(context).popUntil((route) => route.isFirst);
+            }
+          });
+          return const Scaffold(body: Center(child: CircularProgressIndicator()));
+        }
 
-          // 3. SAFE ACCESS: Now we can safely use data!
-          var docSnapshot = snapshot.data!;
-          var data = docSnapshot.data() as Map<String, dynamic>?;
+        var docSnapshot = snapshot.data!;
+        var data = docSnapshot.data() as Map<String, dynamic>?;
 
-          // Extra safety check in case data is null for some reason
-          if (data == null) {
-            return const Scaffold(body: Center(child: Text("Error: Workspace data is empty")));
-          }
+        if (data == null) {
+          return const Scaffold(body: Center(child: Text("Error: Workspace data is empty")));
+        }
 
-          // Now extract your variables as usual
-          bool isAdmin = data['adminId'] == currentUid;
-          bool isActive = data['status'] == 'active';
-          List members = data['members'] ?? [];
-          String joinCode = data['joinCode'] ?? "N/A";
+        bool isAdmin = data['adminId'] == currentUid;
+        bool isActive = data['status'] == 'active';
+        List members = data['members'] ?? [];
+        String joinCode = data['joinCode'] ?? "N/A";
+        String workspaceName = data['name'] ?? "Workspace";
 
         return Scaffold(
           backgroundColor: bgBlue,
@@ -75,9 +79,7 @@ class WorkspaceDetailPage extends StatelessWidget {
                   onPressed: () => Navigator.pop(context),
                 ),
                 actions: [
-                  // 🔥 Notification Bell for Admin to see Join Requests
                   if (isAdmin) _buildRequestNotification(context),
-
                   Padding(
                     padding: const EdgeInsets.only(right: 8.0),
                     child: PopupMenuButton<String>(
@@ -107,7 +109,7 @@ class WorkspaceDetailPage extends StatelessWidget {
                       children: [
                         _statusBadge(isActive),
                         const SizedBox(height: 8),
-                        Text(data['name'], style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF1A4789))),
+                        Text(workspaceName, style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: primaryNavy)),
                         const SizedBox(height: 4),
                         Text(data['description'] ?? "", maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14, color: Colors.grey[600])),
                       ],
@@ -124,7 +126,7 @@ class WorkspaceDetailPage extends StatelessWidget {
                       const SizedBox(height: 20),
                       const Text("TEAMMATE PORTAL", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey, letterSpacing: 1.2)),
                       const SizedBox(height: 12),
-                      _buildAccessKeyCard(context, joinCode),
+                      _buildAccessKeyCard(context, joinCode, workspaceName),
                       const SizedBox(height: 25),
                       const Text("COLLABORATORS", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey, letterSpacing: 1.2)),
                       const SizedBox(height: 12),
@@ -146,13 +148,12 @@ class WorkspaceDetailPage extends StatelessWidget {
 
   // --- REQUEST MANAGEMENT UI ---
 
-  // Update the sub-collection name to match your screenshot: 'joinRequests'
   Widget _buildRequestNotification(BuildContext context) {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
           .collection('workspaces')
           .doc(workspaceId)
-          .collection('joinRequests') // Match your Firebase screenshot
+          .collection('joinRequests')
           .snapshots(),
       builder: (context, snapshot) {
         int count = snapshot.hasData ? snapshot.data!.docs.length : 0;
@@ -187,7 +188,7 @@ class WorkspaceDetailPage extends StatelessWidget {
           stream: FirebaseFirestore.instance
               .collection('workspaces')
               .doc(workspaceId)
-              .collection('joinRequests') // Match your Firebase screenshot
+              .collection('joinRequests')
               .snapshots(),
           builder: (context, snapshot) {
             if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
@@ -241,12 +242,9 @@ class WorkspaceDetailPage extends StatelessWidget {
   }
 
   void _approveUser(String uid) async {
-    // 1. Add the UID to the members array in the main workspace document
     await FirebaseFirestore.instance.collection('workspaces').doc(workspaceId).update({
       'members': FieldValue.arrayUnion([uid])
     });
-
-    // 2. Clean up: Delete the request document after approval
     _rejectUser(uid);
   }
 
@@ -254,12 +252,10 @@ class WorkspaceDetailPage extends StatelessWidget {
     FirebaseFirestore.instance
         .collection('workspaces')
         .doc(workspaceId)
-        .collection('joinRequests') // Ensure this matches 'joinRequests'
+        .collection('joinRequests')
         .doc(uid)
         .delete();
   }
-
-  // --- EXISTING UI HELPERS (STYLIZED) ---
 
   PopupMenuItem<String> _buildMenuItem(String value, IconData icon, String text, {Color? color}) {
     return PopupMenuItem(
@@ -274,7 +270,8 @@ class WorkspaceDetailPage extends StatelessWidget {
     );
   }
 
-  Widget _buildAccessKeyCard(BuildContext context, String code) {
+  // --- ACCESS CARD UPDATED FOR DYNAMIC SHARE HANDLERS ---
+  Widget _buildAccessKeyCard(BuildContext context, String code, String workspaceName) {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -291,15 +288,19 @@ class WorkspaceDetailPage extends StatelessWidget {
                 const SizedBox(height: 6),
                 Text(code, style: const TextStyle(color: Colors.white, fontSize: 30, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 15),
-                _cardButton(Icons.copy, "Copy", () {
-                  Clipboard.setData(ClipboardData(text: code));
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Key copied!")));
-                }),
+                Row(
+                  children: [
+                    _cardButton(Icons.copy, "Copy", () {
+                      Clipboard.setData(ClipboardData(text: code));
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Key copied!")));
+                    }),
+                  ],
+                ),
               ],
             ),
           ),
           GestureDetector(
-            onTap: () => _showFullQR(context, code),
+            onTap: () => _showFullQR(context, code, workspaceName),
             child: Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14)),
@@ -320,18 +321,83 @@ class WorkspaceDetailPage extends StatelessWidget {
   Widget _buildAvatarStack(BuildContext context, List members) {
     return Row(
       children: [
-        ...members.take(4).map((m) => Padding(
-          padding: const EdgeInsets.only(right: 8),
-          child: CircleAvatar(radius: 20, backgroundColor: primaryNavy.withOpacity(0.1), child: const Icon(Icons.person, size: 20)),
+        // 🚀 Loop through the first 4 members dynamically using a sub-widget handler
+        ...members.take(4).map((uid) => Padding(
+          padding: const EdgeInsets.only(right: 6),
+          child: _buildSingleMemberAvatar(uid.toString()),
         )),
+
+        // Overflow Indicator (+ X Counter)
         if (members.length > 4)
-          CircleAvatar(radius: 20, backgroundColor: Colors.grey[300], child: Text("+${members.length - 4}", style: const TextStyle(fontSize: 12, color: Colors.black54))),
+          CircleAvatar(
+              radius: 18,
+              backgroundColor: Colors.grey[300],
+              child: Text(
+                  "+${members.length - 4}",
+                  style: const TextStyle(fontSize: 11, color: Colors.black54, fontWeight: FontWeight.bold)
+              )
+          ),
         const SizedBox(width: 8),
+
+        // Add Button Interaction
         InkWell(
           onTap: () => _showAddMemberDialog(context, members),
-          child: CircleAvatar(radius: 20, backgroundColor: const Color(0xFFE3F2FD), child: Icon(Icons.add, color: primaryNavy)),
+          borderRadius: BorderRadius.circular(20),
+          child: CircleAvatar(
+              radius: 18,
+              backgroundColor: const Color(0xFFE3F2FD),
+              child: Icon(Icons.add, color: primaryNavy, size: 18)
+          ),
         ),
       ],
+    );
+  }
+
+  Widget _buildSingleMemberAvatar(String uid) {
+    return FutureBuilder<QuerySnapshot>(
+      // 🔍 FIX: Query by the 'uid' field instead of document ID
+      future: FirebaseFirestore.instance
+          .collection('users')
+          .where('uid', isEqualTo: uid)
+          .limit(1)
+          .get(),
+      builder: (context, snapshot) {
+        // Fallback placeholder while loading or if user isn't found
+        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+          return CircleAvatar(
+            radius: 18,
+            backgroundColor: primaryNavy.withOpacity(0.1),
+            child: Icon(Icons.person, size: 16, color: primaryNavy),
+          );
+        }
+
+        // Get the document data map safely from the query results
+        var userDoc = snapshot.data!.docs.first;
+        var userData = userDoc.data() as Map<String, dynamic>? ?? {};
+
+        // Match keys directly with your Firestore setup ('profileImage' & 'username')
+        String? imageUrl = userData['profileImage'];
+        String name = userData['username'] ?? "P";
+
+        // 🖼️ Condition A: Render Network Image if the profile image string exists
+        if (imageUrl != null && imageUrl.isNotEmpty) {
+          return CircleAvatar(
+            radius: 18,
+            backgroundColor: Colors.grey[200],
+            backgroundImage: NetworkImage(imageUrl),
+          );
+        }
+
+        // 🔤 Condition B: Render initial letter badge fallback
+        return CircleAvatar(
+          radius: 18,
+          backgroundColor: primaryNavy.withOpacity(0.1),
+          child: Text(
+            name.isNotEmpty ? name[0].toUpperCase() : "P",
+            style: TextStyle(color: primaryNavy, fontSize: 12, fontWeight: FontWeight.bold),
+          ),
+        );
+      },
     );
   }
 
@@ -344,7 +410,6 @@ class WorkspaceDetailPage extends StatelessWidget {
           .where('isDeleted', isEqualTo: false)
           .snapshots(),
       builder: (context, snap) {
-        // ✅ Always add this check for sub-collections too!
         if (!snap.hasData || snap.data == null) {
           return const SliverToBoxAdapter(child: Center(child: CircularProgressIndicator()));
         }
@@ -357,7 +422,7 @@ class WorkspaceDetailPage extends StatelessWidget {
                 var task = doc.data() as Map<String, dynamic>;
                 return GestureDetector(
                   onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => TaskDetailPage(taskId: doc.id, workspaceId: workspaceId))),
-                  child: _taskCard(task),
+                  child: _taskCard(task, id),
                 );
               },
               childCount: snap.data!.docs.length,
@@ -368,24 +433,322 @@ class WorkspaceDetailPage extends StatelessWidget {
     );
   }
 
-  Widget _taskCard(Map<String, dynamic> task) => Container(
-    margin: const EdgeInsets.only(bottom: 15),
-    padding: const EdgeInsets.all(20),
-    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20)),
-    child: Row(
-      children: [
-        const Icon(Icons.radio_button_unchecked, color: Colors.grey),
-        const SizedBox(width: 15),
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(task['taskName'] ?? "Task", style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-          Text("${task['endDate']} • MEMBER", style: const TextStyle(fontSize: 12, color: Colors.grey)),
-        ])),
-        _priorityBadge(task['priority'] ?? 'MEDIUM'),
-      ],
-    ),
-  );
+  Widget _taskCard(Map<String, dynamic> task, String workspaceId) {
+    // 1. Safe state evaluation variables
+    final String taskId = task['taskId'] ?? '';
+    final String status = task['status'] ?? 'PENDING';
+    final bool isCompleted = status == 'DONE';
 
-  // --- DIALOGS ---
+    // Design system token colors
+    const Color primaryNavy = Color(0xFF1A4789);
+    const Color successGreen = Color(0xFF10B981);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          // ✅ INTERACTIVE CHECKBOX ICON BUTTON
+          IconButton(
+            onPressed: () async {
+              if (taskId.isEmpty) return;
+
+              // Toggle the status field natively in Firestore
+              final String nextStatus = isCompleted ? 'PENDING' : 'DONE';
+              await FirebaseFirestore.instance
+                  .collection('workspaces')
+                  .doc(workspaceId)
+                  .collection('tasks')
+                  .doc(taskId)
+                  .update({
+                'status': nextStatus,
+                'updatedAt': FieldValue.serverTimestamp(),
+              });
+            },
+            icon: Icon(
+              isCompleted ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
+              color: isCompleted ? successGreen : Colors.grey.shade400,
+              size: 26,
+            ),
+            splashRadius: 24,
+          ),
+          const SizedBox(width: 10),
+
+          // 📝 TASK INFORMATION TEXT
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  " ${task['taskName'] ?? 'Task'}",
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                    color: isCompleted ? Colors.grey.shade400 : primaryNavy,
+                    // Adds a clean strikethrough line when task status matches DONE
+                    decoration: isCompleted ? TextDecoration.lineThrough : TextDecoration.none,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Icon(Icons.calendar_today_rounded, size: 12, color: Colors.grey.shade500),
+                    const SizedBox(width: 4),
+                    Text(
+                      // Format or clean up the date if you're using Iso8601 strings
+                      task['endDate'] != null && task['endDate'].toString().contains('T')
+                          ? task['endDate'].toString().split('T')[0]
+                          : task['endDate'] ?? '',
+                      style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      "•  ${task['assignedName'] ?? 'Unassigned'}",
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: isCompleted ? Colors.grey.shade400 : Colors.grey.shade600,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+
+          // 🏷️ PRIORITY BADGE (Fades out when task is completed)
+          Opacity(
+            opacity: isCompleted ? 0.4 : 1.0,
+            child: _priorityBadge(task['priority'] ?? 'MEDIUM'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // --- REPAINT LOGIC FOR CAPTURING DATA STREAMS AS IMAGES ---
+  Future<void> _shareQrImage(String workspaceName, String code) async {
+    try {
+      // Find boundary frame elements matching the specific global structural key context
+      RenderRepaintBoundary? boundary = _qrBoundaryKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+
+      if (boundary == null) return;
+
+      // Force programmatic evaluation layout frame capture matrix context to clear high density image
+      ui.Image image = await boundary.toImage(pixelRatio: 3.0);
+      ByteData? byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+
+      if (byteData != null) {
+        final Uint8List pngBytes = byteData.buffer.asUint8List();
+
+        // Write directly to temporary device storage cache paths directory elements context
+        final tempDir = await getTemporaryDirectory();
+        final file = await File('${tempDir.path}/workspace_qr.png').create();
+        await file.writeAsBytes(pngBytes);
+
+        // Call Native system modal to handle media file injection directly across applications
+        await Share.shareXFiles(
+          [XFile(file.path)],
+          text: "Scan this QR code to instantly access our project workspace: *$workspaceName* (Code: $code)!",
+        );
+      }
+    } catch (e) {
+      debugPrint("Failed generating shared system asset element background context: $e");
+    }
+  }
+
+  // --- UPDATED QR DIALOG WITH LIVE EXPORT ACTION ---
+  void _showFullQR(BuildContext context, String code, String workspaceName) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) => Dialog(
+        backgroundColor: Colors.white,
+        elevation: 24,
+        shadowColor: primaryNavy.withOpacity(0.15),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Top Accent Bar for Premium feel
+              Container(
+                width: 40,
+                height: 5,
+                decoration: BoxDecoration(
+                  color: Colors.grey[200],
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // Header Group
+              Text(
+                  "SHARE WORKSPACE",
+                  style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      color: primaryNavy.withOpacity(0.6),
+                      fontSize: 10,
+                      letterSpacing: 2.0
+                  )
+              ),
+              const SizedBox(height: 4),
+              Text(
+                workspaceName,
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: primaryNavy,
+                ),
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 24),
+
+              // Premium Floating QR container
+              RepaintBoundary(
+                key: _qrBoundaryKey,
+                child: Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(24),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.04),
+                        blurRadius: 16,
+                        offset: const Offset(0, 8),
+                      )
+                    ],
+                    border: Border.all(color: Colors.grey.shade100, width: 1),
+                  ),
+                  child: QrImageView(
+                    data: code,
+                    version: QrVersions.auto,
+                    size: 180.0,
+                    foregroundColor: primaryNavy,
+                    eyeStyle: QrEyeStyle(eyeShape: QrEyeShape.circle, color: primaryNavy),
+                    dataModuleStyle: QrDataModuleStyle(dataModuleShape: QrDataModuleShape.circle, color: primaryNavy),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+
+              // Clean Code Box with Instant Tap-to-Copy interaction
+              InkWell(
+                onTap: () {
+                  Clipboard.setData(ClipboardData(text: code));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text("Access Key copied!"), behavior: SnackBarBehavior.floating),
+                  );
+                },
+                borderRadius: BorderRadius.circular(16),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  decoration: BoxDecoration(
+                    color: bgBlue.withOpacity(0.7),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: primaryNavy.withOpacity(0.05)),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const SizedBox(width: 24),
+                      Text(
+                          code,
+                          style: TextStyle(
+                              letterSpacing: 6,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 22,
+                              color: primaryNavy
+                          )
+                      ),
+                      Icon(Icons.copy_rounded, size: 16, color: primaryNavy.withOpacity(0.4)),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+
+              // Modern Interactive Action Tray
+              Row(
+                children: [
+                  // Share QR Image
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => _shareQrImage(workspaceName, code),
+                      icon: const Icon(Icons.qr_code_scanner_rounded, size: 18),
+                      label: const Text("Share QR", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: primaryNavy,
+                        side: BorderSide(color: primaryNavy.withOpacity(0.2)),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+
+                  // WhatsApp text share template shortcut
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        // 🛠️ Construct your app's join link (replace with your actual domain or scheme)
+                        // Example using a universal link format:
+                        String appLink = "https://planova.app/join?code=$code";
+
+                        // Modern structured message formatting
+                        String message = "🚀 Join my Workspace '$workspaceName' on Planova!\n\n"
+                            "👉 Click this link to join directly:\n$appLink\n\n"
+                            "Alternatively, enter the Invite Code manually: *$code*";
+
+                        Share.share(message);
+                      },
+                      icon: const Icon(Icons.share_rounded, size: 18),
+                      label: const Text("Share Link", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: primaryNavy,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+
+              // Subtle Cancel/Done string option instead of a heavy button
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                style: TextButton.styleFrom(
+                  foregroundColor: Colors.grey[500],
+                  minimumSize: const Size(double.infinity, 40),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                child: const Text("Dismiss", style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   void _handleMenuSelection(BuildContext context, String val, String id, bool status, String name, String desc, String currentUid) {
     if (val == 'status') {
@@ -424,7 +787,6 @@ class WorkspaceDetailPage extends StatelessWidget {
       context: context,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(25))),
       builder: (context) {
-        // Use a Query instead of a direct .doc() to find the custom UID_XXXX document
         return StreamBuilder<QuerySnapshot>(
           stream: FirebaseFirestore.instance
               .collection('users')
@@ -439,11 +801,9 @@ class WorkspaceDetailPage extends StatelessWidget {
               return const SizedBox(height: 200, child: Center(child: Text("User profile not found")));
             }
 
-            // Extract friends list from your document
             var userData = userQuerySnap.data!.docs.first.data() as Map<String, dynamic>;
             List friends = userData['friends'] ?? [];
 
-            // 2. Filter out members already in the workspace
             return StreamBuilder<QuerySnapshot>(
               stream: FirebaseFirestore.instance
                   .collection('workspaces')
@@ -455,7 +815,6 @@ class WorkspaceDetailPage extends StatelessWidget {
 
                 List pendingUids = requestSnap.data!.docs.map((doc) => doc.id).toList();
 
-                // Logic: Must be a friend, NOT already a member, and NOT already invited
                 List eligible = friends.where((f) =>
                 !existingMembers.contains(f) && !pendingUids.contains(f)
                 ).toList();
@@ -488,7 +847,6 @@ class WorkspaceDetailPage extends StatelessWidget {
 
   Widget _buildFriendTile(String friendUid, BuildContext context) {
     return FutureBuilder<QuerySnapshot>(
-      // Query the users collection to find the friend's details by their UID field
       future: FirebaseFirestore.instance
           .collection('users')
           .where('uid', isEqualTo: friendUid)
@@ -510,7 +868,6 @@ class WorkspaceDetailPage extends StatelessWidget {
           trailing: IconButton(
             icon: const Icon(Icons.send, color: Colors.green),
             onPressed: () {
-              // Write to the 'joinRequests' sub-collection per your DB structure
               FirebaseFirestore.instance
                   .collection('workspaces')
                   .doc(workspaceId)
@@ -533,30 +890,135 @@ class WorkspaceDetailPage extends StatelessWidget {
     );
   }
 
-  void _showFullQR(BuildContext context, String code) {
+  void _showEditDialog(BuildContext context, String id, String name, String desc) {
+    final nC = TextEditingController(text: name);
+    final dC = TextEditingController(text: desc);
+
+    // Define UI theme colors matching your app architecture
+    const Color primaryNavy = Color(0xFF1A4789);
+    const Color lightBg = Color(0xFFF8FAFC);
+
     showDialog(
       context: context,
-      builder: (BuildContext context) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(32)),
+      barrierDismissible: true,
+      builder: (context) => Dialog(
+        backgroundColor: Colors.white,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
           child: Column(
             mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text("WORKSPACE PORTAL", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey, fontSize: 11, letterSpacing: 1.5)),
+              // Header Section
+              Row(
+                children: [
+                  CircleAvatar(
+                    radius: 18,
+                    backgroundColor: primaryNavy.withOpacity(0.1),
+                    child: const Icon(Icons.edit_note_rounded, color: primaryNavy, size: 20),
+                  ),
+                  const SizedBox(width: 12),
+                  const Text(
+                    "Edit Workspace",
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: primaryNavy,
+                    ),
+                  ),
+                ],
+              ),
               const SizedBox(height: 24),
-              QrImageView(
-                data: code,
-                version: QrVersions.auto,
-                size: 220.0,
-                foregroundColor: primaryNavy,
-                eyeStyle: QrEyeStyle(eyeShape: QrEyeShape.circle, color: primaryNavy),
-                dataModuleStyle: QrDataModuleStyle(dataModuleShape: QrDataModuleShape.circle, color: primaryNavy),
+
+              // Input: Workspace Name
+              const Text(
+                "WORKSPACE NAME",
+                style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey, letterSpacing: 1.1),
+              ),
+              const SizedBox(height: 8),
+              Container(
+                decoration: BoxDecoration(
+                  color: lightBg,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: Colors.grey.shade200),
+                ),
+                child: TextField(
+                  controller: nC,
+                  style: const TextStyle(fontWeight: FontWeight.w600, color: primaryNavy),
+                  decoration: const InputDecoration(
+                    hintText: "Enter workspace name...",
+                    border: InputBorder.none,
+                    contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              // Input: Description
+              const Text(
+                "DESCRIPTION",
+                style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey, letterSpacing: 1.1),
+              ),
+              const SizedBox(height: 8),
+              Container(
+                decoration: BoxDecoration(
+                  color: lightBg,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: Colors.grey.shade200),
+                ),
+                child: TextField(
+                  controller: dC,
+                  maxLines: 3,
+                  minLines: 1,
+                  style: TextStyle(color: Colors.grey[800], fontSize: 14, height: 1.4),
+                  decoration: const InputDecoration(
+                    hintText: "What is this workspace used for?",
+                    border: InputBorder.none,
+                    contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  ),
+                ),
               ),
               const SizedBox(height: 28),
-              Container(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), decoration: BoxDecoration(color: bgBlue, borderRadius: BorderRadius.circular(16)), child: Text(code, style: TextStyle(letterSpacing: 6, fontWeight: FontWeight.w900, fontSize: 26, color: primaryNavy))),
-              const SizedBox(height: 32),
-              SizedBox(width: double.infinity, child: ElevatedButton(onPressed: () => Navigator.pop(context), style: ElevatedButton.styleFrom(backgroundColor: primaryNavy, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))), child: const Text("DONE", style: TextStyle(color: Colors.white)))),
+
+              // Actions Layout Track
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  // Cancel Action Button
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.grey[600],
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: const Text("Cancel", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                  ),
+                  const SizedBox(width: 8),
+
+                  // Save Action Button
+                  ElevatedButton(
+                    onPressed: () {
+                      if (nC.text.trim().isEmpty) return;
+                      FirebaseFirestore.instance.collection('workspaces').doc(id).update({
+                        'name': nC.text.trim(),
+                        'description': dC.text.trim(),
+                      });
+                      Navigator.pop(context);
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: primaryNavy,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: const Text("Save Changes", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                  ),
+                ],
+              ),
             ],
           ),
         ),
@@ -564,23 +1026,10 @@ class WorkspaceDetailPage extends StatelessWidget {
     );
   }
 
-  void _showEditDialog(BuildContext context, String id, String name, String desc) {
-    final nC = TextEditingController(text: name);
-    final dC = TextEditingController(text: desc);
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("Edit Workspace"),
-        content: Column(mainAxisSize: MainAxisSize.min, children: [TextField(controller: nC, decoration: const InputDecoration(labelText: "Name")), TextField(controller: dC, decoration: const InputDecoration(labelText: "Description"))]),
-        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancel")), ElevatedButton(onPressed: () { FirebaseFirestore.instance.collection('workspaces').doc(id).update({'name': nC.text, 'description': dC.text}); Navigator.pop(context); }, child: const Text("Save"))],
-      ),
-    );
-  }
-
   void _confirmDelete(BuildContext context, String id) {
     showDialog(
       context: context,
-      builder: (dialogContext) => AlertDialog( // Use a different name for dialog context
+      builder: (dialogContext) => AlertDialog(
         title: const Text("Delete Workspace?"),
         content: const Text("This action is permanent."),
         actions: [
@@ -590,17 +1039,9 @@ class WorkspaceDetailPage extends StatelessWidget {
           ),
           TextButton(
               onPressed: () async {
-                // 1. Close the dialog immediately
                 Navigator.pop(dialogContext);
-
                 try {
-                  // 2. Perform the deletion
                   await FirebaseFirestore.instance.collection('workspaces').doc(id).delete();
-
-                  // NOTE: We don't need to Navigator.pop(context) here anymore!
-                  // The StreamBuilder at the top will see the document is gone
-                  // and redirect the user automatically.
-
                 } catch (e) {
                   if (context.mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(

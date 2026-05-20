@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:image_picker/image_picker.dart'; // 👈 ADD THIS IMPORT
 
 class ScanQrPage extends StatefulWidget {
-  const ScanQrPage({super.key});
+  final String? initialCode;
+
+  const ScanQrPage({super.key, this.initialCode});
 
   @override
   State<ScanQrPage> createState() => _ScanQrPageState();
@@ -13,11 +16,73 @@ class ScanQrPage extends StatefulWidget {
 class _ScanQrPageState extends State<ScanQrPage> {
   bool isScanning = true;
   final MobileScannerController controller = MobileScannerController();
+  final ImagePicker _imagePicker = ImagePicker(); // 👈 Initialize picker
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.initialCode != null && widget.initialCode!.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _handleQrResult(widget.initialCode!);
+      });
+    }
+  }
 
   @override
   void dispose() {
     controller.dispose();
     super.dispose();
+  }
+
+  /// 🖼️ NEW FUNCTION: Pick an image from gallery and extract the QR code data
+  Future<void> _importQrFromGallery() async {
+    try {
+      // 1. Stop the live camera engine stream BEFORE opening the system sheet
+      await controller.stop();
+      setState(() => isScanning = false);
+
+      // 2. Pick the image AND downscale it slightly to optimize ML Kit recognition speed
+      final XFile? pickedFile = await _imagePicker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 1024,  // Restricting excessive resolution prevents engine timeouts
+        maxHeight: 1024,
+      );
+
+      // If the user cancelled, restart the camera stream smoothly
+      if (pickedFile == null) {
+        await controller.start();
+        setState(() => isScanning = true);
+        return;
+      }
+
+      // 3. Let ML Kit analyze the static file path matrix
+      final BarcodeCapture? capture = await controller.analyzeImage(pickedFile.path);
+
+      if (capture != null && capture.barcodes.isNotEmpty) {
+        final String? rawValue = capture.barcodes.first.rawValue;
+        if (rawValue != null && rawValue.isNotEmpty) {
+          debugPrint("🚀 QR Code extracted successfully: $rawValue");
+
+          // Force scanning true flag state right before handling so validation conditions pass
+          setState(() => isScanning = true);
+          _handleQrResult(rawValue);
+          return; // Exit execution block completely on success
+        }
+      }
+
+      // 4. Fallback: If nothing was found, alert user and restart the live camera feed
+      _showSimpleDialog("No QR Code Found", "We couldn't detect a valid workspace link or code in that picture.");
+      await controller.start();
+      setState(() => isScanning = true);
+
+    } catch (e) {
+      debugPrint("Error parsing gallery file: $e");
+      _showSimpleDialog("Error", "Failed processing image asset: $e");
+
+      // Safe recovery fallback loop
+      try { await controller.start(); } catch(_) {}
+      setState(() => isScanning = true);
+    }
   }
 
   Future<void> _handleQrResult(String code) async {
@@ -27,7 +92,6 @@ class _ScanQrPageState extends State<ScanQrPage> {
     final String currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
 
     try {
-      // 1. Find the workspace
       var query = await FirebaseFirestore.instance
           .collection('workspaces')
           .where('joinCode', isEqualTo: code.trim().toUpperCase())
@@ -40,13 +104,11 @@ class _ScanQrPageState extends State<ScanQrPage> {
         String workspaceName = data['name'] ?? "Unnamed Workspace";
         String description = data['description'] ?? "No description provided.";
 
-        // 2. Check if already a member
         if ((data['members'] as List).contains(currentUid)) {
           _showSimpleDialog("Already a Member", "You are already in $workspaceName.");
           return;
         }
 
-        // 3. Show Details & Confirm Auto-Join
         _showConfirmJoinDialog(
           workspaceName: workspaceName,
           description: description,
@@ -60,13 +122,11 @@ class _ScanQrPageState extends State<ScanQrPage> {
     }
   }
 
-  // 🔥 DIRECT JOIN LOGIC (No Admin Approval Needed)
   Future<void> _performAutoJoin(DocumentReference ref, String name) async {
     final user = FirebaseAuth.instance.currentUser;
     final String currentUid = user?.uid ?? '';
 
     try {
-      // 1. Create the request in the sub-collection (Matches your security rules)
       await ref.collection('joinRequests').doc(currentUid).set({
         'uid': currentUid,
         'name': user?.displayName ?? "New User",
@@ -77,16 +137,10 @@ class _ScanQrPageState extends State<ScanQrPage> {
       });
 
       if (mounted) {
-        // 2. Close the Confirmation Dialog
         Navigator.pop(context);
-
-        // 3. Show success snackbar on the Team Page instead of a blocking Dialog
         ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text("Request sent for $name!"))
         );
-
-        // 4. 🔥 GO BACK TO team_page.dart
-        // This pops the ScanQrPage and returns to the previous screen
         Navigator.pop(context);
       }
     } catch (e) {
@@ -104,12 +158,12 @@ class _ScanQrPageState extends State<ScanQrPage> {
       barrierDismissible: false,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text("Join Workspace?"),
+        title: const Text("Join Workspace?"),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(workspaceName, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+            Text(workspaceName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
             const SizedBox(height: 8),
             Text(description, style: TextStyle(color: Colors.grey[600])),
           ],
@@ -118,7 +172,7 @@ class _ScanQrPageState extends State<ScanQrPage> {
           TextButton(
             onPressed: () {
               Navigator.pop(context);
-              setState(() => isScanning = true); // Resume scanning
+              setState(() => isScanning = true);
             },
             child: const Text("Cancel"),
           ),
@@ -142,11 +196,11 @@ class _ScanQrPageState extends State<ScanQrPage> {
         actions: [
           TextButton(
             onPressed: () {
-              Navigator.pop(context); // Close dialog
+              Navigator.pop(context);
               if (title == "Welcome!") {
-                Navigator.pop(context); // Exit scan page to Team page
+                Navigator.pop(context);
               } else {
-                setState(() => isScanning = true); // Resume scanning
+                setState(() => isScanning = true);
               }
             },
             child: const Text("OK"),
@@ -165,6 +219,15 @@ class _ScanQrPageState extends State<ScanQrPage> {
           icon: const Icon(Icons.arrow_back),
           onPressed: () => Navigator.pop(context),
         ),
+        // 🛠️ ADD GALLERY ENTRY BUTTON TO APP BAR
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.photo_library_rounded),
+            tooltip: "Import from Gallery",
+            onPressed: _importQrFromGallery,
+          ),
+          const SizedBox(width: 8),
+        ],
       ),
       body: Stack(
         children: [
@@ -179,7 +242,6 @@ class _ScanQrPageState extends State<ScanQrPage> {
               }
             },
           ),
-          // Visual scanning frame
           Center(
             child: Container(
               width: 260,

@@ -55,25 +55,52 @@ class _AddTaskPageState extends State<AddTaskPage> {
       return;
     }
 
-    await FirebaseFirestore.instance
-        .collection('workspaces')
-        .doc(widget.workspaceId)
-        .collection('tasks')
-        .add({
-      'taskName': _titleController.text.trim(),
-      'description': _descController.text.trim(),
-      'effort': _effortController.text.trim(),
-      'startDate': startDate.toIso8601String(),
-      'endDate': endDate.toIso8601String(),
-      'priority': _priority,
-      'assignedTo': _selectedAssignee,
-      'status': 'PENDING',
-      'isDeleted': false,
-      'createdAt': FieldValue.serverTimestamp(),
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
+    try {
+      final tasksRef = FirebaseFirestore.instance
+          .collection('workspaces')
+          .doc(widget.workspaceId)
+          .collection('tasks');
 
-    if (mounted) Navigator.pop(context);
+      // 1. Fetch current tasks to compute the next sequential index ID
+      var currentTasksQuery = await tasksRef.get();
+      int nextTaskIndex = currentTasksQuery.docs.length + 1;
+      String customTaskId = "TASK-$nextTaskIndex"; // Output example: TASK-1, TASK-2
+
+      // 2. Fetch the username of the selected user UID
+      var userQuery = await FirebaseFirestore.instance
+          .collection('users')
+          .where('uid', isEqualTo: _selectedAssignee)
+          .limit(1)
+          .get();
+
+      String assigneeUsername = "Unknown";
+      if (userQuery.docs.isNotEmpty) {
+        assigneeUsername = userQuery.docs.first.data()['username'] ?? "Unknown";
+      }
+
+      // 3. Write data using the explicit custom document path ID
+      await tasksRef.doc(customTaskId).set({
+        'taskId': customTaskId, // Stored inside for easy access
+        'taskName': _titleController.text.trim(),
+        'description': _descController.text.trim(),
+        'effort': _effortController.text.trim(),
+        'startDate': startDate.toIso8601String(),
+        'endDate': endDate.toIso8601String(),
+        'priority': _priority,
+        'assignedTo': _selectedAssignee,      // Keeps the UID for security/rules queries
+        'assignedName': assigneeUsername,     // 🔥 NEW: Holds the displayable username string
+        'status': 'PENDING',
+        'isDeleted': false,
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Error creating task: $e")),
+      );
+    }
   }
 
   @override
