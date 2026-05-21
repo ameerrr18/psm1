@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'upload_page.dart';
 import 'scan_pdf_page.dart';
+import 'in_app_viewer_page.dart';
 
 class FolderDetailPage extends StatelessWidget {
   final String folderId;
@@ -67,10 +68,13 @@ class FolderDetailPage extends StatelessWidget {
                 title: "Scan to PDF",
                 subtitle: "Use camera to capture and convert to PDF",
                 onTap: () {
-                  Navigator.pop(context);
+                  Navigator.pop(context); // Dismiss the sheet overlay
                   Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (context) => const ScanPdfPage()),
+                    MaterialPageRoute(
+                      // 🔑 PASS THE CURRENT FOLDER ID TO THE SCANNER PAGE HERE
+                      builder: (context) => ScanPdfPage(folderId: folderId),
+                    ),
                   );
                 },
               ),
@@ -220,7 +224,16 @@ class FolderDetailPage extends StatelessWidget {
         trailing: const Icon(Icons.more_vert, size: 20),
         onTap: () {
           if (data['fileUrl'] != null) {
-            _launchURL(context, data['fileUrl']);
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => InAppViewerPage(
+                  fileUrl: data['fileUrl'],
+                  fileName: data['fileName'] ?? "Untitled Document",
+                  isPdf: data['fileType'] == 'pdf',
+                ),
+              ),
+            );
           } else {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(content: Text("Error: File link not found")),
