@@ -242,7 +242,7 @@ class _TaskPageState extends State<TaskPage> {
                     .collection('tasks')
                     .where('userId', isEqualTo: currentUserId)
                     .orderBy('status', descending: true)
-                    .orderBy('startDate', descending: false)
+                    .orderBy('endDate', descending: false)
                     .snapshots(),
                 builder: (context, snapshot) {
                   if (snapshot.hasError) return Center(child: Text("Error: ${snapshot.error}"));
