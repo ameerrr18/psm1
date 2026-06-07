@@ -30,42 +30,34 @@ class NotiPage extends StatelessWidget {
         centerTitle: true,
       ),
       body: StreamBuilder<QuerySnapshot>(
-        // We listen to active tasks that are NOT deleted and NOT done
+        // ✅ FIX: Listen directly to your dedicated notifications collection sorted by timestamp
         stream: FirebaseFirestore.instance
-            .collection('tasks')
+            .collection('notifications')
             .where('userId', isEqualTo: currentUserId)
-            .where('isDeleted', isEqualTo: false)
-            .where('status', isNotEqualTo: 'DONE')
+            .orderBy('timestamp', descending: true) // Lists freshest alerts first
             .snapshots(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
 
+          // Automatically handles errors if Firebase indexes aren't compiled yet
+          if (snapshot.hasError) {
+            debugPrint("Firestore Error: ${snapshot.error}");
+            return Center(child: Text("Error loading updates: ${snapshot.error}"));
+          }
+
           if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
             return _buildEmptyState();
           }
 
-          // Filter tasks locally for 3-day or 1-day warnings
-          final now = DateTime.now();
-          final upcomingTasks = snapshot.data!.docs.where((doc) {
-            final data = doc.data() as Map<String, dynamic>;
-            if (data['endDate'] == null) return false;
-
-            final dueDate = DateTime.parse(data['endDate']);
-            final daysRemaining = dueDate.difference(now).inDays;
-
-            // Only include if exactly 1 or 3 days remain
-            return daysRemaining == 1 || daysRemaining == 3;
-          }).toList();
-
-          if (upcomingTasks.isEmpty) return _buildEmptyState();
+          final notificationDocs = snapshot.data!.docs;
 
           return ListView(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
             children: [
-              _buildSectionHeader("DUE SOON"),
-              ...upcomingTasks.map((doc) => _buildReminderCard(context, doc)).toList(),
+              _buildSectionHeader("RECENT ALERTS"),
+              ...notificationDocs.map((doc) => _buildReminderCard(context, doc)).toList(),
             ],
           );
         },
@@ -75,35 +67,45 @@ class NotiPage extends StatelessWidget {
 
   Widget _buildReminderCard(BuildContext context, DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
-    final String taskName = data['taskName'] ?? 'Unnamed Task';
-    final String taskId = data['taskId'] ?? doc.id;
-    final DateTime dueDate = DateTime.parse(data['endDate']);
-    final int daysLeft = dueDate.difference(DateTime.now()).inDays;
+    final String title = data['title'] ?? 'Notification';
+    final String message = data['message'] ?? '';
+    final String targetId = data['targetId'] ?? '';
+    final Timestamp? timestamp = data['timestamp'] as Timestamp?;
+
+    // Format the timestamp nicely into relative strings (e.g., "5m ago")
+    final String timeAgo = timestamp != null ? _formatTimestamp(timestamp) : "";
 
     return GestureDetector(
-      onTap: () => Navigator.push(
-        context,
-        MaterialPageRoute(builder: (context) => DetailTaskPage(taskId: taskId)),
-      ),
+      onTap: () {
+        if (targetId.isNotEmpty) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => DetailTaskPage(taskId: targetId)),
+          );
+        }
+      },
       child: Container(
         margin: const EdgeInsets.only(bottom: 15),
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(25),
-          border: Border.all(
-            color: daysLeft == 1 ? Colors.red.withOpacity(0.3) : Colors.orange.withOpacity(0.3),
-            width: 1,
-          ),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10)],
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.03),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            )
+          ],
         ),
         child: Row(
           children: [
             CircleAvatar(
-              backgroundColor: daysLeft == 1 ? Colors.red[50] : Colors.orange[50],
+              backgroundColor: primaryNavy.withOpacity(0.1),
               child: Icon(
-                Icons.alarm,
-                color: daysLeft == 1 ? Colors.red : Colors.orange,
+                Icons.notifications_active,
+                color: primaryNavy,
+                size: 20,
               ),
             ),
             const SizedBox(width: 15),
@@ -111,22 +113,33 @@ class NotiPage extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    daysLeft == 1 ? "Due Tomorrow!" : "Due in 3 Days",
-                    style: TextStyle(
-                      color: daysLeft == 1 ? Colors.red : Colors.orange[800],
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
-                    ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        title,
+                        style: TextStyle(
+                          color: primaryNavy,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                      Text(
+                        timeAgo,
+                        style: TextStyle(color: Colors.grey.shade500, fontSize: 11),
+                      ),
+                    ],
                   ),
+                  const SizedBox(height: 4),
                   Text(
-                    taskName,
-                    style: TextStyle(color: primaryNavy, fontWeight: FontWeight.bold, fontSize: 16),
+                    message,
+                    style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
                   ),
                 ],
               ),
             ),
-            Icon(Icons.chevron_right, color: Colors.grey[400]),
+            const SizedBox(width: 5),
+            Icon(Icons.chevron_right, color: Colors.grey[400], size: 18),
           ],
         ),
       ),
@@ -168,9 +181,11 @@ class NotiPage extends StatelessWidget {
   }
 
   String _formatTimestamp(Timestamp timestamp) {
-    var now = DateTime.now();
-    var date = timestamp.toDate();
-    var diff = now.difference(date);
+    final now = DateTime.now();
+    final date = timestamp.toDate();
+    final diff = now.difference(date);
+
+    if (diff.inSeconds < 60) return "Just now";
     if (diff.inMinutes < 60) return "${diff.inMinutes}m ago";
     if (diff.inHours < 24) return "${diff.inHours}h ago";
     return DateFormat('MMM d').format(date);

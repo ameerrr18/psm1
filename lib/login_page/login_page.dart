@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:ui';
 import 'signup_page.dart';
 import 'forgot_password_page.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -42,7 +43,6 @@ class _LoginPageState extends State<LoginPage> {
     String input = _userInputController.text.trim();
     String password = _passwordController.text.trim();
 
-    // Validate empty fields
     if (input.isEmpty || password.isEmpty) {
       _showErrorDialog("Hold on!", "Please enter your email/username and password to continue.");
       return;
@@ -75,15 +75,34 @@ class _LoginPageState extends State<LoginPage> {
       if (userCredential.user != null) {
         final String uid = userCredential.user!.uid;
 
-        final activityColl = FirebaseFirestore.instance.collection(
-            'user_activity');
-
+        // Log User Login Activity
+        final activityColl = FirebaseFirestore.instance.collection('user_activity');
         await activityColl.add({
           'userId': uid,
           'type': 'LOGIN',
           'timestamp': FieldValue.serverTimestamp(),
           'deviceName': 'Mobile Device',
         });
+
+        // 🚀 NEW: SYNC FCM TOKEN FOR STEP C BACKGROUND NOTIFICATIONS
+        try {
+          String? fcmToken = await FirebaseMessaging.instance.getToken();
+          if (fcmToken != null) {
+            await FirebaseFirestore.instance
+                .collection('users')
+                .doc(uid) // Target the specific authenticated user document
+                .set({
+              'fcmToken': fcmToken,
+              'lastPlatform': 'android',
+              'updatedAt': FieldValue.serverTimestamp(),
+            }, SetOptions(merge: true)); // Merge prevents overwriting existing data fields like username!
+            debugPrint("🚀 Cloud Synchronization: User FCM Token saved successfully.");
+          }
+        } catch (fcmError) {
+          debugPrint("⚠️ Failed to sync FCM token during login: $fcmError");
+          // Bypassed gracefully so authentication doesn't fail if network drops
+        }
+
         final logs = await activityColl
             .where('userId', isEqualTo: uid)
             .orderBy('timestamp', descending: true)
@@ -94,6 +113,7 @@ class _LoginPageState extends State<LoginPage> {
             await activityColl.doc(logs.docs[i].id).delete();
           }
         }
+
         if (mounted) {
           final prefs = await SharedPreferences.getInstance();
           await prefs.setBool('remember_me', _rememberMe);
@@ -101,7 +121,6 @@ class _LoginPageState extends State<LoginPage> {
         }
       }
     } on FirebaseAuthException catch (e) {
-      // Handling specific Firebase errors with Popups
       if (e.code == 'wrong-password') {
         _showErrorDialog("Incorrect Password", "The password you entered is incorrect. Please try again or reset it.");
       } else if (e.code == 'user-not-found') {

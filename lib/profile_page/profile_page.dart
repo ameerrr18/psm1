@@ -62,7 +62,26 @@ class _ProfilePageState extends State<ProfilePage> {
       final user = FirebaseAuth.instance.currentUser;
 
       if (user != null) {
-        // 1. Perform Firestore updates FIRST while user is still authed
+        // A. Find the user document matching the authenticated user's UID field
+        final querySnapshot = await FirebaseFirestore.instance
+            .collection('users')
+            .where('uid', isEqualTo: user.uid)
+            .limit(1)
+            .get();
+
+        // B. Delete the field value from Firestore to break the notification routing path
+        if (querySnapshot.docs.isNotEmpty) {
+          final docId = querySnapshot.docs.first.id;
+          await FirebaseFirestore.instance
+              .collection('users')
+              .doc(docId)
+              .update({
+            'fcmToken': FieldValue.delete(), // Wipes the registration route off the server
+          });
+          debugPrint("❌ Cloud Separation: User FCM Token removed from Firestore.");
+        }
+
+        // C. Record user activity logs
         await FirebaseFirestore.instance
             .collection('user_activity')
             .add({

@@ -2,6 +2,7 @@ import 'package:intl/intl.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../notification/notification_service.dart';
 
 class AddNewTask extends StatefulWidget {
   const AddNewTask({super.key});
@@ -18,9 +19,9 @@ class _AddNewTaskState extends State<AddNewTask> {
   String selectedPriority = "MEDIUM";
   String currentStatus = "PENDING";
 
-  // 🔥 Separate Start and End Dates
   DateTime startDate = DateTime.now();
-  DateTime endDate = DateTime.now().add(const Duration(days: 1)); // Default end to tomorrow
+  // Default end to tomorrow at the current time to avoid midnight trap
+  DateTime endDate = DateTime.now().add(const Duration(days: 1));
 
   final Color primaryNavy = const Color(0xFF1A4789);
 
@@ -32,7 +33,6 @@ class _AddNewTaskState extends State<AddNewTask> {
       return;
     }
 
-    // 🔥 Logical check: End date must be after or on start date
     if (endDate.isBefore(startDate)) {
       _showWarningDialog("End date (Due Date) cannot be before the Start Date.");
       return;
@@ -86,10 +86,14 @@ class _AddNewTaskState extends State<AddNewTask> {
       String customId = "$cleanName-$timestamp";
       String taskName = _taskNameController.text.toUpperCase();
 
+      // Setup Firestore explicit collection paths references
+      final taskDocRef = FirebaseFirestore.instance.collection('tasks').doc(customId);
+      final notiDocRef = FirebaseFirestore.instance.collection('notifications').doc();
+
       WriteBatch batch = FirebaseFirestore.instance.batch();
 
-      // --- 1. CREATE THE TASK ---
-      await FirebaseFirestore.instance.collection('tasks').doc(customId).set({
+      // ✅ FIX: Attach operations directly into the batch instance
+      batch.set(taskDocRef, {
         'userId': user.uid,
         'taskId': customId,
         'taskName': taskName.trim(),
@@ -104,22 +108,33 @@ class _AddNewTaskState extends State<AddNewTask> {
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      // --- 2. CREATE THE NOTIFICATION (NEW) ---
-      // This ensures the NotiPage will show this new entry immediately
-      await FirebaseFirestore.instance.collection('notifications').add({
-        'userId': user.uid, // Field name must match your NotiPage query
+      batch.set(notiDocRef, {
+        'userId': user.uid,
         'title': 'New Task Assigned',
         'message': 'You created: $taskName',
         'type': 'task',
-        'targetId': customId, // This links back to the task we just created
-        'timestamp': FieldValue.serverTimestamp(), // Critical for 'orderBy'
+        'targetId': customId,
+        'timestamp': FieldValue.serverTimestamp(),
       });
 
+      // Execute safely
       await batch.commit();
+      debugPrint("🚀 Firestore batch write committed successfully.");
+
+      // --- 3. SCHEDULE LOCAL BACKGROUND NOTIFICATION ---
+      try {
+        await NotificationService.scheduleTaskReminders(
+          stringTaskId: customId,
+          taskTitle: taskName.trim(),
+          dueDate: endDate,
+        );
+      } catch (notiError) {
+        debugPrint("Local scheduling bypassed or failed: $notiError");
+      }
 
       if (mounted) Navigator.pop(context);
     } catch (e) {
-      debugPrint("Error: $e");
+      debugPrint("CRITICAL Error during task setup creation: $e");
       _showWarningDialog("Failed to create task. Please try again.");
     }
   }
@@ -141,8 +156,6 @@ class _AddNewTaskState extends State<AddNewTask> {
         padding: const EdgeInsets.all(20),
         child: Column(
           children: [
-
-            /// 🔥 SCROLLABLE CONTENT
             Expanded(
               child: SingleChildScrollView(
                 child: Column(
@@ -194,36 +207,25 @@ class _AddNewTaskState extends State<AddNewTask> {
               ),
             ),
 
-            /// 🔥 BUTTON (ALWAYS ABOVE KEYBOARD)
             SizedBox(
               width: double.infinity,
               height: 55,
               child: ElevatedButton(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: primaryNavy,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(15),
-                  ),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
                 ),
                 onPressed: _validateAndCreate,
                 child: const Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Text(
-                      "Create Smart Task",
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
+                    Text("Create Smart Task", style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
                     SizedBox(width: 10),
                     Icon(Icons.chevron_right, color: Colors.white),
                   ],
                 ),
               ),
             ),
-
             const SizedBox(height: 10),
           ],
         ),
@@ -257,28 +259,24 @@ class _AddNewTaskState extends State<AddNewTask> {
 
   Widget _datePicker({required bool isStartDate}) {
     DateTime displayDate = isStartDate ? startDate : endDate;
-
-    // 🔥 Define "Today" at the start of the day (00:00:00)
     final DateTime now = DateTime.now();
     final DateTime today = DateTime(now.year, now.month, now.day);
 
     return GestureDetector(
       onTap: () async {
-        DateTime? picked = await showDatePicker(
+        // 1. Pick the Calendar Date
+        DateTime? pickedDate = await showDatePicker(
           context: context,
           initialDate: displayDate.isBefore(today) ? today : displayDate,
-
-          // 🔥 This prevents picking any date before today
           firstDate: today,
-
           lastDate: DateTime(2030),
           builder: (context, child) {
             return Theme(
               data: Theme.of(context).copyWith(
                 colorScheme: ColorScheme.light(
-                  primary: primaryNavy, // Header background color
-                  onPrimary: Colors.white, // Header text color
-                  onSurface: primaryNavy, // Body text color
+                  primary: primaryNavy,
+                  onPrimary: Colors.white,
+                  onSurface: primaryNavy,
                 ),
               ),
               child: child!,
@@ -286,16 +284,31 @@ class _AddNewTaskState extends State<AddNewTask> {
           },
         );
 
-        if (picked != null) {
+        if (pickedDate != null) {
+          if (!mounted) return;
+
+          // 2. Pick the Specific Clock Time to avoid the Midnight trap
+          TimeOfDay? pickedTime = await showTimePicker(
+            context: context,
+            initialTime: TimeOfDay.fromDateTime(displayDate),
+          );
+
+          DateTime finalDateTime = DateTime(
+            pickedDate.year,
+            pickedDate.month,
+            pickedDate.day,
+            pickedTime?.hour ?? displayDate.hour,
+            pickedTime?.minute ?? displayDate.minute,
+          );
+
           setState(() {
             if (isStartDate) {
-              startDate = picked;
-              // Ensure End Date is at least the same as Start Date
+              startDate = finalDateTime;
               if (startDate.isAfter(endDate)) {
-                endDate = startDate;
+                endDate = startDate.add(const Duration(hours: 1));
               }
             } else {
-              endDate = picked;
+              endDate = finalDateTime;
             }
           });
         }
@@ -303,16 +316,19 @@ class _AddNewTaskState extends State<AddNewTask> {
       child: Container(
         padding: const EdgeInsets.all(15),
         decoration: BoxDecoration(
-            color: const Color(0xFFF8FAFC),
-            borderRadius: BorderRadius.circular(15)
+          color: const Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.circular(15),
         ),
         child: Row(
           children: [
             Icon(Icons.calendar_today, size: 16, color: primaryNavy),
             const SizedBox(width: 8),
-            Text(
-              DateFormat('dd/MM/yyyy').format(displayDate),
-              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+            Expanded(
+              child: Text(
+                DateFormat('dd/MM/yyyy HH:mm').format(displayDate),
+                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
           ],
         ),
@@ -341,25 +357,6 @@ class _AddNewTaskState extends State<AddNewTask> {
           ),
         );
       }).toList(),
-    );
-  }
-
-  Widget _buildSubmitButton() {
-    return SizedBox(
-      width: double.infinity,
-      height: 55,
-      child: ElevatedButton(
-        style: ElevatedButton.styleFrom(backgroundColor: primaryNavy, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))),
-        onPressed: _validateAndCreate,
-        child: const Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text("Create Smart Task", style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-            SizedBox(width: 10),
-            Icon(Icons.chevron_right, color: Colors.white),
-          ],
-        ),
-      ),
     );
   }
 }
